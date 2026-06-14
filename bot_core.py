@@ -27,8 +27,6 @@ from personality import (
     WELCOME_TEXT,
     ABOUT_TEXT,
     REQUEST_TEXT,
-    REQUEST_PHONE_TEXT,
-    REQUEST_DESC_TEXT,
     SUCCESS_REQUEST_TEXT,
     BOOKS_TEXT,
     SERVICES_TEXT,
@@ -55,7 +53,7 @@ def load_json(filename: str) -> list:
 
 
 # ─── Стани розмови ───────────────────────────────────────────────────────────
-REQUEST_NAME, REQUEST_PHONE, REQUEST_DESC = range(3)
+REQUEST_DESC = 0
 
 
 # ─── Клавіатури ──────────────────────────────────────────────────────────────
@@ -218,23 +216,7 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    # REQUEST_TEXT вже містить запит імені наприкінці — не дублюємо
     await query.edit_message_text(REQUEST_TEXT)
-    return REQUEST_NAME
-
-
-async def req_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["req_name"] = update.message.text.strip()
-    await update.message.reply_text(
-        f"Дякую, *{context.user_data['req_name']}*.\n\n{REQUEST_PHONE_TEXT}",
-        parse_mode="Markdown",
-    )
-    return REQUEST_PHONE
-
-
-async def req_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["req_phone"] = update.message.text.strip()
-    await update.message.reply_text(REQUEST_DESC_TEXT, parse_mode="Markdown")
     return REQUEST_DESC
 
 
@@ -242,16 +224,13 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     desc = update.message.text.strip()
     user = update.message.from_user
     username = f"@{user.username}" if user.username else "без username"
-    name = context.user_data.get("req_name", "—")
-    phone = context.user_data.get("req_phone", "—")
 
     admin_text = (
         f"📝 *Нова заявка на консультацію*\n\n"
-        f"Ім'я: *{name}*\n"
-        f"Телефон: `{phone}`\n"
         f"Ситуація: {desc}\n\n"
-        f"Telegram: {user.full_name} ({username})\n"
-        f"ID: `{user.id}`"
+        f"Telegram name: {user.full_name}\n"
+        f"Username: {username}\n"
+        f"Telegram ID: `{user.id}`"
     )
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
@@ -260,7 +239,6 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         logger.error("Помилка відправки адміну: %s", e)
 
     await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
-    context.user_data.clear()
     return ConversationHandler.END
 
 
@@ -292,12 +270,6 @@ def build_application() -> Application:
     request_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(cb_request, pattern="^request$")],
         states={
-            REQUEST_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, req_get_name),
-            ],
-            REQUEST_PHONE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, req_get_phone),
-            ],
             REQUEST_DESC: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, req_get_desc),
             ],
