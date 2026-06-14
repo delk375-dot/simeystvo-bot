@@ -62,8 +62,8 @@ REQUEST_DESC = 0
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📞 Зателефонувати", url="tel:+380678390916"),
-            InlineKeyboardButton("📱 Viber",          url="https://invite.viber.com/?number=380678390916"),
+            InlineKeyboardButton("📞 Телефон",  callback_data="phone"),
+            InlineKeyboardButton("📱 Viber",   url="https://invite.viber.com/?number=380678390916"),
         ],
         [
             InlineKeyboardButton("🏛 Послуги",       callback_data="services"),
@@ -208,6 +208,20 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
 
 
+# ─── Контакти ────────────────────────────────────────────────────────────────
+
+async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "📞 Телефон адвоката:\n"
+        "+380678390916\n\n"
+        "Якщо питання термінове — краще одразу телефонуйте.\n"
+        "Якщо може почекати — опишіть ситуацію в розділі «📝 Консультація»."
+    )
+    await query.edit_message_text(text, reply_markup=kb_home())
+
+
 # ─── Про адвоката ─────────────────────────────────────────────────────────────
 
 async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -328,6 +342,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
 
     return app
