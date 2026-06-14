@@ -213,11 +213,10 @@ async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     text = (
-        "📞 Телефон адвоката:\n"
-        "+380678390916\n\n"
-        "Якщо ситуація термінова — краще одразу телефонуйте.\n\n"
-        "Якщо питання може почекати — опишіть ситуацію в розділі «📝 Консультація», "
-        "і я передам звернення адвокату.\n\n"
+        "📞 +380678390916\n\n"
+        "Адвокат Василь Масюк.\n\n"
+        "Якщо справа термінова — телефонуйте одразу.\n"
+        "Якщо може почекати — опишіть ситуацію в розділі «📝 Консультація».\n\n"
         "🤖 CooLaw"
     )
     await query.edit_message_text(text, reply_markup=kb_home())
@@ -303,7 +302,7 @@ async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
     elif update.message:
         await update.message.reply_text(
-            "Добре, зупиняємось. Повертаю до головного меню — якщо що, я тут. 🤖",
+            "Зрозумів. Повертаємось на початок.\n\n🤖 CooLaw",
             reply_markup=kb_home(),
         )
     return ConversationHandler.END
