@@ -62,6 +62,10 @@ REQUEST_DESC = 0
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
+            InlineKeyboardButton("📞 Зателефонувати", url="tel:+380678390916"),
+            InlineKeyboardButton("📱 Viber",          url="https://invite.viber.com/?number=380678390916"),
+        ],
+        [
             InlineKeyboardButton("🏛 Послуги",       callback_data="services"),
             InlineKeyboardButton("📚 Мої книги",     callback_data="books"),
         ],
