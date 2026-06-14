@@ -37,6 +37,7 @@ from personality import (
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "219205800"))
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не знайдено у .env файлі")
@@ -242,6 +243,37 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return ConversationHandler.END
 
 
+# ─── Публікація в канал ──────────────────────────────────────────────────────
+
+async def publish_to_channel(bot, text: str) -> None:
+    if not CHANNEL_ID:
+        raise ValueError("CHANNEL_ID не задано")
+    await bot.send_message(chat_id=CHANNEL_ID, text=text)
+
+
+async def cmd_publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or update.effective_user.id != ADMIN_CHAT_ID:
+        await update.message.reply_text("Ця команда доступна тільки адміністратору.")
+        return
+
+    text = " ".join(context.args).strip()
+    if not text:
+        await update.message.reply_text("Використання: /publish текст повідомлення")
+        return
+
+    if not CHANNEL_ID:
+        await update.message.reply_text("❌ CHANNEL_ID не задано в Environment Variables.")
+        return
+
+    try:
+        await publish_to_channel(context.bot, text)
+        await update.message.reply_text("✅ Опубліковано в канал.")
+        logger.info("Публікація в канал від admin: %s...", text[:50])
+    except Exception as e:
+        logger.error("Помилка публікації в канал: %s", e)
+        await update.message.reply_text(f"❌ Помилка: {e}")
+
+
 # ─── Скасування розмови ──────────────────────────────────────────────────────
 
 async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -284,7 +316,8 @@ def build_application() -> Application:
     )
 
     app.add_handler(request_conv)
-    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("publish", cmd_publish))
     app.add_handler(CallbackQueryHandler(cb_back_main,      pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(cb_services,       pattern="^services$"))
     app.add_handler(CallbackQueryHandler(cb_service_detail, pattern="^service:"))
