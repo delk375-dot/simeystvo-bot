@@ -27,7 +27,6 @@ from personality import (
     WELCOME_TEXT,
     ABOUT_TEXT,
     REQUEST_TEXT,
-    REQUEST_NAME_TEXT,
     REQUEST_PHONE_TEXT,
     REQUEST_DESC_TEXT,
     SUCCESS_REQUEST_TEXT,
@@ -63,27 +62,38 @@ REQUEST_NAME, REQUEST_PHONE, REQUEST_DESC = range(3)
 
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏛 Юридичні послуги",              callback_data="services")],
-        [InlineKeyboardButton("📚 Книги",                         callback_data="books")],
-        [InlineKeyboardButton("📝 Залишити заявку на консультацію", callback_data="request")],
-        [InlineKeyboardButton("ℹ️ Про нас",                       callback_data="about")],
+        [
+            InlineKeyboardButton("🏛 Послуги",       callback_data="services"),
+            InlineKeyboardButton("📚 Мої книги",     callback_data="books"),
+        ],
+        [
+            InlineKeyboardButton("📝 Консультація",  callback_data="request"),
+            InlineKeyboardButton("👨‍⚖️ Про адвоката", callback_data="about"),
+        ],
     ])
 
 
 def kb_services() -> InlineKeyboardMarkup:
     services = load_json("services.json")
-    rows = [
-        [InlineKeyboardButton(f"{s['emoji']} {s['title']}", callback_data=f"service:{s['id']}")]
-        for s in services
-    ]
+    # Кнопки по 2 в ряд
+    rows = []
+    for i in range(0, len(services), 2):
+        pair = services[i:i + 2]
+        rows.append([
+            InlineKeyboardButton(
+                f"{s['emoji']} {s.get('button_title', s['title'])}",
+                callback_data=f"service:{s['id']}",
+            )
+            for s in pair
+        ])
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     return InlineKeyboardMarkup(rows)
 
 
 def kb_service_detail() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Залишити заявку на консультацію", callback_data="request")],
-        [InlineKeyboardButton("⬅️ Назад до послуг",                callback_data="services")],
+        [InlineKeyboardButton("📝 Консультація",  callback_data="request")],
+        [InlineKeyboardButton("⬅️ Назад до послуг", callback_data="services")],
     ])
 
 
@@ -195,7 +205,7 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
 
 
-# ─── Про нас ─────────────────────────────────────────────────────────────────
+# ─── Про адвоката ─────────────────────────────────────────────────────────────
 
 async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -203,12 +213,13 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(ABOUT_TEXT, reply_markup=kb_home())
 
 
-# ─── Залишити заявку на консультацію (ConversationHandler) ───────────────────
+# ─── Консультація (ConversationHandler) ──────────────────────────────────────
 
 async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(f"{REQUEST_TEXT}\n\n{REQUEST_NAME_TEXT}")
+    # REQUEST_TEXT вже містить запит імені наприкінці — не дублюємо
+    await query.edit_message_text(REQUEST_TEXT)
     return REQUEST_NAME
 
 
