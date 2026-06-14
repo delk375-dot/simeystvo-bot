@@ -62,8 +62,7 @@ REQUEST_DESC = 0
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📞 Телефон",  callback_data="phone"),
-            InlineKeyboardButton("📱 Viber",   url="https://invite.viber.com/?number=380678390916"),
+            InlineKeyboardButton("📞 Телефон", callback_data="phone"),
         ],
         [
             InlineKeyboardButton("🏛 Послуги",       callback_data="services"),
@@ -216,8 +215,10 @@ async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
         "📞 Телефон адвоката:\n"
         "+380678390916\n\n"
-        "Якщо питання термінове — краще одразу телефонуйте.\n"
-        "Якщо може почекати — опишіть ситуацію в розділі «📝 Консультація»."
+        "Якщо ситуація термінова — краще одразу телефонуйте.\n\n"
+        "Якщо питання може почекати — опишіть ситуацію в розділі «📝 Консультація», "
+        "і я передам звернення адвокату.\n\n"
+        "🤖 CooLaw"
     )
     await query.edit_message_text(text, reply_markup=kb_home())
 
