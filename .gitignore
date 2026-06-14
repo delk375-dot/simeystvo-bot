@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+logs/*.log
+*.egg-info/
+.venv/
+venv/
+# Radar — приватні заявки не комітяться
+data/leads.json
+data/radar_state.json

@@ -1,0 +1,57 @@
+name: LexMind Publish
+
+on:
+  # Розклад — UTC (Kyiv = UTC+3 влітку, UTC+2 взимку)
+  # Публікації о 10:00 Kyiv (влітку = 07:00 UTC)
+  schedule:
+    - cron: '0 7 * * 1'   # Понеділок  → book
+    - cron: '0 7 * * 2'   # Вівторок   → question
+    - cron: '0 7 * * 3'   # Середа     → manipulation
+    - cron: '0 7 * * 4'   # Четвер     → film
+    - cron: '0 7 * * 5'   # П'ятниця   → insight   (до 12:00 Kyiv)
+    - cron: '0 12 * * 5'  # П'ятниця   → phrase    (15:00 Kyiv = 12:00 UTC)
+
+  # Ручний запуск через GitHub UI або API
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "Що публікувати (auto = за розкладом)"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - book
+          - question
+          - manipulation
+          - film
+          - insight
+          - phrase
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Publish
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          KIND="${{ github.event.inputs.kind }}"
+          if [ -z "$KIND" ] || [ "$KIND" = "auto" ]; then
+            python publish_once.py
+          else
+            python publish_once.py "$KIND"
+          fi
