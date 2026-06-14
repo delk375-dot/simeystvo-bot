@@ -1,34 +1,38 @@
 """
-api/telegram.py — Vercel serverless webhook endpoint.
+api/telegram.py — Vercel serverless webhook endpoint (Flask / WSGI).
 
-POST /api/telegram  — приймає update від Telegram, передає боту.
-GET  /api/telegram  — health-check: повертає текст "alive".
+Vercel виявляє змінну `app` (Flask WSGI callable) як entrypoint.
+Стара форма `class handler(BaseHTTPRequestHandler)` більше не підтримується
+новим Vercel Python Runtime — тому замінено на Flask.
 
-Стан Application (user_data, ConversationHandler) зберігається
-в пам'яті процесу на весь час життя контейнера Vercel.
-При рестарті холодного контейнера незавершені розмови скидаються —
-це нормальна поведінка для serverless-режиму.
+POST /api/telegram  — приймає Update від Telegram, передає боту.
+GET  /api/telegram  — health-check.
+
+Стан ConversationHandler зберігається в пам'яті процесу на час
+життя теплого контейнера Vercel. При холодному рестарті незавершені
+розмови скидаються — це нормальна поведінка serverless.
 """
 
 import asyncio
-import json
 import logging
 import os
 import sys
-from http.server import BaseHTTPRequestHandler
 
-# Додаємо корінь проекту до sys.path, щоб bot_core та personality знаходились
+# Корінь проекту в sys.path — щоб bot_core та personality знаходились
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from flask import Flask, request
 from telegram import Update
 from bot_core import build_application
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ─── Flask WSGI app (Vercel entrypoint) ──────────────────────────────────────
+app = Flask(__name__)
+
 # ─── Singleton: один Application на весь час життя контейнера ────────────────
-# Зберігаємо стан ConversationHandler між запитами одного теплого контейнера.
-_app = None
+_tg_app = None
 _loop = None
 
 
@@ -40,45 +44,38 @@ def _get_loop() -> asyncio.AbstractEventLoop:
     return _loop
 
 
-def _get_app():
-    global _app
+def _get_tg_app():
+    global _tg_app
     loop = _get_loop()
-    if _app is None:
-        logger.info("Ініціалізація Application (холодний старт)")
-        _app = build_application()
-        loop.run_until_complete(_app.initialize())
-    return _app
+    if _tg_app is None:
+        logger.info("Cold start: ініціалізація Application")
+        _tg_app = build_application()
+        loop.run_until_complete(_tg_app.initialize())
+    return _tg_app
 
 
-# ─── Vercel handler ───────────────────────────────────────────────────────────
+# ─── Routes ───────────────────────────────────────────────────────────────────
+# Vercel може передавати шлях і як /api/telegram, і як /
 
-class handler(BaseHTTPRequestHandler):
+@app.route("/api/telegram", methods=["GET"])
+@app.route("/", methods=["GET"])
+def health():
+    return "Simeystvo bot webhook is alive", 200
 
-    def do_POST(self):
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-            update_data = json.loads(body)
 
-            app = _get_app()
-            loop = _get_loop()
-            update = Update.de_json(update_data, app.bot)
-            loop.run_until_complete(app.process_update(update))
+@app.route("/api/telegram", methods=["POST"])
+@app.route("/", methods=["POST"])
+def webhook():
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return "Bad Request: empty body", 400
 
-            self._respond(200, b"OK")
-        except Exception as e:
-            logger.error("Помилка обробки update: %s", e)
-            self._respond(500, b"Internal Server Error")
-
-    def do_GET(self):
-        self._respond(200, b"Simeystvo bot webhook is alive")
-
-    def _respond(self, code: int, body: bytes) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, fmt, *args):
-        logger.info(fmt, *args)
+        tg_app = _get_tg_app()
+        loop = _get_loop()
+        update = Update.de_json(data, tg_app.bot)
+        loop.run_until_complete(tg_app.process_update(update))
+        return "OK", 200
+    except Exception as e:
+        logger.error("Помилка обробки update: %s", e)
+        return "Internal Server Error", 500
