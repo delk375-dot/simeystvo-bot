@@ -132,7 +132,7 @@ async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     services = load_json("services.json")
     service = next((s for s in services if s["id"] == service_id), None)
     if not service:
-        await query.answer("Послугу не знайдено", show_alert=True)
+        await query.answer("Не можу знайти цю послугу — спробуйте ще раз", show_alert=True)
         return
     text = (
         f"{service['emoji']} *{service['title']}*\n\n"
@@ -163,7 +163,7 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     books = load_json("books.json")
     book = next((b for b in books if b["id"] == book_id), None)
     if not book:
-        await query.answer("Книгу не знайдено", show_alert=True)
+        await query.answer("Не можу знайти цю книгу — спробуйте ще раз", show_alert=True)
         return
     text = (
         f"📖 *{book['title']}*\n\n"
@@ -284,7 +284,7 @@ async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
     elif update.message:
         await update.message.reply_text(
-            "Добре, зупиняємося. Повертаємося до головного меню.",
+            "Добре, зупиняємось. Повертаю до головного меню — якщо що, я тут. 🤖",
             reply_markup=kb_home(),
         )
     return ConversationHandler.END
