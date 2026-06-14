@@ -362,7 +362,7 @@ async def consult_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(REQUEST_TEXT)
+    await query.edit_message_text(f"{REQUEST_TEXT}\n\n{REQUEST_NAME_TEXT}")
     return REQUEST_NAME
 
 
