@@ -62,15 +62,15 @@ REQUEST_DESC = 0
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📞 Телефон", callback_data="phone"),
-        ],
-        [
             InlineKeyboardButton("🏛 Послуги",       callback_data="services"),
-            InlineKeyboardButton("📚 Мої книги",     callback_data="books"),
+            InlineKeyboardButton("📚 Книги",         callback_data="books"),
         ],
         [
             InlineKeyboardButton("📝 Консультація",  callback_data="request"),
             InlineKeyboardButton("👨‍⚖️ Про адвоката", callback_data="about"),
+        ],
+        [
+            InlineKeyboardButton("📞 Телефон",       callback_data="phone"),
         ],
     ])
 
@@ -101,6 +101,13 @@ def kb_service_detail() -> InlineKeyboardMarkup:
 
 def kb_home() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
+    ])
+
+
+def kb_after_request() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Написати ще",  callback_data="request")],
         [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
     ])
 
@@ -137,6 +144,7 @@ async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not service:
         await query.answer("Не можу знайти цю послугу — спробуйте ще раз", show_alert=True)
         return
+    context.user_data["selected_service"] = service["title"]
     text = (
         f"{service['emoji']} *{service['title']}*\n\n"
         f"{service['description']}\n\n"
@@ -243,9 +251,12 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     desc = update.message.text.strip()
     user = update.message.from_user
     username = f"@{user.username}" if user.username else "без username"
+    service_name = context.user_data.pop("selected_service", None)
+    napryam = f"Напрям: {service_name}" if service_name else "Напрям: не вказано"
 
     admin_text = (
         f"📝 *Нова заявка на консультацію*\n\n"
+        f"{napryam}\n\n"
         f"Ситуація: {desc}\n\n"
         f"Telegram name: {user.full_name}\n"
         f"Username: {username}\n"
@@ -257,8 +268,27 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
-    await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
+    await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_after_request())
     return ConversationHandler.END
+
+
+# ─── Fallback: довільний текст поза сценарієм ────────────────────────────────
+
+async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = (
+        "Зрозумів.\n\n"
+        "Якщо хочете передати ситуацію адвокату — натисніть «📝 Консультація» "
+        "і коротко опишіть, що сталося.\n\n"
+        "Я занотую і передам Василю Васильовичу.\n\n"
+        "🤖 CooLaw"
+    )
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Консультація", callback_data="request")],
+            [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
+        ]),
+    )
 
 
 # ─── Публікація в канал ──────────────────────────────────────────────────────
@@ -344,5 +374,6 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_fallback))
 
     return app
