@@ -21,6 +21,25 @@ from telegram.ext import (
     filters,
 )
 
+from personality import (
+    WELCOME_TEXT,
+    ABOUT_TEXT,
+    CONSULTATION_TEXT,
+    CONSULT_NAME_TEXT,
+    CONSULT_PHONE_TEXT,
+    SUCCESS_CONSULTATION_TEXT,
+    REQUEST_TEXT,
+    REQUEST_NAME_TEXT,
+    REQUEST_PHONE_TEXT,
+    REQUEST_DESC_TEXT,
+    SUCCESS_REQUEST_TEXT,
+    BOOKS_TEXT,
+    COURSES_TEXT,
+    SERVICES_TEXT,
+    BOOK_INTEREST_TEXT,
+    COURSE_INTEREST_TEXT,
+)
+
 # ─── Конфігурація ─────────────────────────────────────────────────────────────
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -65,11 +84,11 @@ def load_json(filename: str) -> list:
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏛 Юридичні послуги", callback_data="services")],
-        [InlineKeyboardButton("📚 Книги", callback_data="books")],
-        [InlineKeyboardButton("🎓 Відеокурси", callback_data="courses")],
-        [InlineKeyboardButton("📞 Консультація", callback_data="consultation")],
-        [InlineKeyboardButton("📝 Залишити заявку", callback_data="request")],
-        [InlineKeyboardButton("ℹ️ Про нас", callback_data="about")],
+        [InlineKeyboardButton("📚 Книги",             callback_data="books")],
+        [InlineKeyboardButton("🎓 Відеокурси",        callback_data="courses")],
+        [InlineKeyboardButton("📞 Консультація",      callback_data="consultation")],
+        [InlineKeyboardButton("📝 Залишити заявку",   callback_data="request")],
+        [InlineKeyboardButton("ℹ️ Про нас",           callback_data="about")],
     ])
 
 
@@ -86,16 +105,16 @@ def kb_services() -> InlineKeyboardMarkup:
 def kb_service_detail() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📞 Замовити консультацію", callback_data="consultation")],
-        [InlineKeyboardButton("⬅️ Назад до послуг", callback_data="services")],
+        [InlineKeyboardButton("⬅️ Назад до послуг",      callback_data="services")],
     ])
 
 
 def kb_consultation() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💻 Онлайн консультація", callback_data="consult:online")],
-        [InlineKeyboardButton("🤝 Особиста зустріч", callback_data="consult:meeting")],
-        [InlineKeyboardButton("⚡ Термінове питання", callback_data="consult:urgent")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="back_main")],
+        [InlineKeyboardButton("🤝 Особиста зустріч",    callback_data="consult:meeting")],
+        [InlineKeyboardButton("⚡ Термінове питання",   callback_data="consult:urgent")],
+        [InlineKeyboardButton("⬅️ Назад",               callback_data="back_main")],
     ])
 
 
@@ -105,28 +124,19 @@ def kb_home() -> InlineKeyboardMarkup:
     ])
 
 
-# ─── Текст головного меню ─────────────────────────────────────────────────────
-WELCOME_TEXT = (
-    "👋 Вітаємо в *АО Сімейство*!\n\n"
-    "Ми спеціалізуємося на сімейному праві:\n"
-    "розлучення, аліменти, спадщина, захист прав дітей.\n\n"
-    "Оберіть розділ:"
-)
-
-
 # ─── /start ──────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
-    await update.message.reply_text(WELCOME_TEXT, parse_mode="Markdown", reply_markup=kb_main())
+    await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
 
 
-# ─── Головне меню (callback) ──────────────────────────────────────────────────
+# ─── Головне меню (callback) ─────────────────────────────────────────────────
 
 async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(WELCOME_TEXT, parse_mode="Markdown", reply_markup=kb_main())
+    await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
 
 
 # ─── Юридичні послуги ────────────────────────────────────────────────────────
@@ -134,11 +144,7 @@ async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def cb_services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "🏛 *Юридичні послуги*\n\nОберіть послугу для отримання детальної інформації:",
-        parse_mode="Markdown",
-        reply_markup=kb_services(),
-    )
+    await query.edit_message_text(SERVICES_TEXT, reply_markup=kb_services())
 
 
 async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,7 +159,7 @@ async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     text = (
         f"{service['emoji']} *{service['title']}*\n\n"
         f"{service['description']}\n\n"
-        f"⏱ *Типові строки:* {service['typical_terms']}"
+        f"⏱ *Строки:* {service['typical_terms']}"
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb_service_detail())
 
@@ -169,11 +175,7 @@ async def cb_books(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for b in books
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
-    await query.edit_message_text(
-        "📚 *Книги*\n\nОберіть книгу для детальної інформації:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(rows),
-    )
+    await query.edit_message_text(BOOKS_TEXT, reply_markup=InlineKeyboardMarkup(rows))
 
 
 async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -194,15 +196,15 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Цікавить книга", callback_data=f"book_interest:{book_id}")],
-            [InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")],
+            [InlineKeyboardButton("✅ Цікавить книга",    callback_data=f"book_interest:{book_id}")],
+            [InlineKeyboardButton("⬅️ Назад до книг",    callback_data="books")],
         ]),
     )
 
 
 async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer("✅ Дякуємо! Ми зв'яжемося з вами.")
+    await query.answer()
     book_id = int(query.data.split(":", 1)[1])
     books = load_json("books.json")
     book = next((b for b in books if b["id"] == book_id), None)
@@ -221,12 +223,7 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
-    await query.edit_message_text(
-        f"✅ Дякуємо за інтерес до книги *{book['title'] if book else ''}*!\n\n"
-        f"Наш менеджер зв'яжеться з вами найближчим часом.",
-        parse_mode="Markdown",
-        reply_markup=kb_home(),
-    )
+    await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
 
 
 # ─── Відеокурси ──────────────────────────────────────────────────────────────
@@ -240,11 +237,7 @@ async def cb_courses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         for c in courses
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
-    await query.edit_message_text(
-        "🎓 *Відеокурси*\n\nОберіть курс для детальної інформації:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(rows),
-    )
+    await query.edit_message_text(COURSES_TEXT, reply_markup=InlineKeyboardMarkup(rows))
 
 
 async def cb_course_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -265,15 +258,15 @@ async def cb_course_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Хочу отримати", callback_data=f"course_interest:{course_id}")],
-            [InlineKeyboardButton("⬅️ Назад до курсів", callback_data="courses")],
+            [InlineKeyboardButton("✅ Хочу отримати",      callback_data=f"course_interest:{course_id}")],
+            [InlineKeyboardButton("⬅️ Назад до курсів",   callback_data="courses")],
         ]),
     )
 
 
 async def cb_course_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer("✅ Дякуємо! Ми зв'яжемося з вами.")
+    await query.answer()
     course_id = int(query.data.split(":", 1)[1])
     courses = load_json("courses.json")
     course = next((c for c in courses if c["id"] == course_id), None)
@@ -292,12 +285,7 @@ async def cb_course_interest(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
-    await query.edit_message_text(
-        f"✅ Дякуємо за інтерес до курсу *{course['title'] if course else ''}*!\n\n"
-        f"Наш менеджер зв'яжеться з вами найближчим часом.",
-        parse_mode="Markdown",
-        reply_markup=kb_home(),
-    )
+    await query.edit_message_text(COURSE_INTEREST_TEXT, reply_markup=kb_home())
 
 
 # ─── Про нас ─────────────────────────────────────────────────────────────────
@@ -305,19 +293,7 @@ async def cb_course_interest(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    text = (
-        "ℹ️ *АО Сімейство*\n\n"
-        "👨‍💼 *Василь Васильович Масюк*\n"
-        "⚖️ Адвокат\n"
-        "🎓 Кандидат юридичних наук\n"
-        "🧠 Магістр психології\n\n"
-        "Спеціалізуємося на сімейному праві: розлучення, аліменти, "
-        "визначення місця проживання дітей, спадщина та судове представництво.\n\n"
-        "Ми не просто юристи — ми розуміємо, що за кожною справою стоять "
-        "живі люди з болем та надією на справедливість.\n\n"
-        "📞 Зв'яжіться з нами для безкоштовної первинної консультації."
-    )
-    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb_home())
+    await query.edit_message_text(ABOUT_TEXT, reply_markup=kb_home())
 
 
 # ─── Консультація (ConversationHandler) ──────────────────────────────────────
@@ -325,11 +301,7 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cb_consultation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "📞 *Консультація*\n\nОберіть зручний формат:",
-        parse_mode="Markdown",
-        reply_markup=kb_consultation(),
-    )
+    await query.edit_message_text(CONSULTATION_TEXT, reply_markup=kb_consultation())
     return CONSULT_TYPE
 
 
@@ -338,14 +310,13 @@ async def cb_consult_type(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
     type_key = query.data.split(":", 1)[1]
     labels = {
-        "online": "💻 Онлайн консультація",
+        "online":  "💻 Онлайн консультація",
         "meeting": "🤝 Особиста зустріч",
-        "urgent": "⚡ Термінове питання",
+        "urgent":  "⚡ Термінове питання",
     }
     context.user_data["consult_type"] = labels.get(type_key, type_key)
     await query.edit_message_text(
-        f"✅ Ви обрали: *{context.user_data['consult_type']}*\n\n"
-        f"Будь ласка, введіть ваше *ім'я*:",
+        f"Ви обрали: *{context.user_data['consult_type']}*\n\n{CONSULT_NAME_TEXT}",
         parse_mode="Markdown",
     )
     return CONSULT_NAME
@@ -354,8 +325,7 @@ async def cb_consult_type(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def consult_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["consult_name"] = update.message.text.strip()
     await update.message.reply_text(
-        f"Дякуємо, *{context.user_data['consult_name']}*!\n\n"
-        f"Введіть ваш *номер телефону*:",
+        f"Дякую, *{context.user_data['consult_name']}*.\n\n{CONSULT_PHONE_TEXT}",
         parse_mode="Markdown",
     )
     return CONSULT_PHONE
@@ -382,12 +352,7 @@ async def consult_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
-    await update.message.reply_text(
-        f"✅ Дякуємо, *{name}*!\n\n"
-        f"Ваша заявка прийнята. Ми зв'яжемося з вами за номером `{phone}` найближчим часом.",
-        parse_mode="Markdown",
-        reply_markup=kb_home(),
-    )
+    await update.message.reply_text(SUCCESS_CONSULTATION_TEXT, reply_markup=kb_home())
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -397,20 +362,14 @@ async def consult_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "📝 *Залишити заявку*\n\n"
-        "Адвокат розгляне вашу ситуацію та зв'яжеться особисто.\n\n"
-        "Введіть ваше *ім'я*:",
-        parse_mode="Markdown",
-    )
+    await query.edit_message_text(REQUEST_TEXT)
     return REQUEST_NAME
 
 
 async def req_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["req_name"] = update.message.text.strip()
     await update.message.reply_text(
-        f"Дякуємо, *{context.user_data['req_name']}*!\n\n"
-        f"Введіть ваш *номер телефону*:",
+        f"Дякую, *{context.user_data['req_name']}*.\n\n{REQUEST_PHONE_TEXT}",
         parse_mode="Markdown",
     )
     return REQUEST_PHONE
@@ -418,10 +377,7 @@ async def req_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def req_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["req_phone"] = update.message.text.strip()
-    await update.message.reply_text(
-        "Коротко опишіть вашу *ситуацію* або питання\n_(2–3 речення достатньо)_:",
-        parse_mode="Markdown",
-    )
+    await update.message.reply_text(REQUEST_DESC_TEXT, parse_mode="Markdown")
     return REQUEST_DESC
 
 
@@ -446,12 +402,7 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
-    await update.message.reply_text(
-        f"✅ Дякуємо, *{name}*!\n\n"
-        f"Ваша заявка прийнята. Адвокат особисто зв'яжеться з вами найближчим часом.",
-        parse_mode="Markdown",
-        reply_markup=kb_home(),
-    )
+    await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -459,15 +410,14 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 # ─── Скасування розмови ──────────────────────────────────────────────────────
 
 async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Скасовує поточну розмову та повертає до головного меню."""
     context.user_data.clear()
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text(WELCOME_TEXT, parse_mode="Markdown", reply_markup=kb_main())
+        await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
     elif update.message:
         await update.message.reply_text(
-            "Скасовано. Повертаємось до головного меню.",
+            "Добре, зупиняємося. Повертаємося до головного меню.",
             reply_markup=kb_home(),
         )
     return ConversationHandler.END
@@ -486,7 +436,7 @@ async def main_async() -> None:
         states={
             CONSULT_TYPE: [
                 CallbackQueryHandler(cb_consult_type, pattern="^consult:"),
-                CallbackQueryHandler(conv_cancel, pattern="^back_main$"),
+                CallbackQueryHandler(conv_cancel,     pattern="^back_main$"),
             ],
             CONSULT_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, consult_get_name),
@@ -496,7 +446,7 @@ async def main_async() -> None:
             ],
         },
         fallbacks=[
-            CommandHandler("start", conv_cancel),
+            CommandHandler("start",  conv_cancel),
             CommandHandler("cancel", conv_cancel),
             CallbackQueryHandler(conv_cancel, pattern="^back_main$"),
         ],
@@ -519,7 +469,7 @@ async def main_async() -> None:
             ],
         },
         fallbacks=[
-            CommandHandler("start", conv_cancel),
+            CommandHandler("start",  conv_cancel),
             CommandHandler("cancel", conv_cancel),
             CallbackQueryHandler(conv_cancel, pattern="^back_main$"),
         ],
@@ -527,24 +477,24 @@ async def main_async() -> None:
         allow_reentry=True,
     )
 
-    # Реєстрація handlers — ConversationHandlers першими
+    # ConversationHandlers першими
     app.add_handler(consult_conv)
     app.add_handler(request_conv)
 
     # Команди
     app.add_handler(CommandHandler("start", cmd_start))
 
-    # Callback handlers — меню
-    app.add_handler(CallbackQueryHandler(cb_back_main,      pattern="^back_main$"))
-    app.add_handler(CallbackQueryHandler(cb_services,       pattern="^services$"))
-    app.add_handler(CallbackQueryHandler(cb_service_detail, pattern="^service:"))
-    app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
-    app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_courses,        pattern="^courses$"))
-    app.add_handler(CallbackQueryHandler(cb_course_detail,  pattern="^course:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_course_interest,pattern="^course_interest:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
+    # Callback handlers
+    app.add_handler(CallbackQueryHandler(cb_back_main,       pattern="^back_main$"))
+    app.add_handler(CallbackQueryHandler(cb_services,        pattern="^services$"))
+    app.add_handler(CallbackQueryHandler(cb_service_detail,  pattern="^service:"))
+    app.add_handler(CallbackQueryHandler(cb_books,           pattern="^books$"))
+    app.add_handler(CallbackQueryHandler(cb_book_detail,     pattern="^book:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_book_interest,   pattern="^book_interest:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_courses,         pattern="^courses$"))
+    app.add_handler(CallbackQueryHandler(cb_course_detail,   pattern="^course:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_course_interest, pattern="^course_interest:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_about,           pattern="^about$"))
 
     await app.initialize()
 
