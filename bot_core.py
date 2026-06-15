@@ -692,7 +692,6 @@ async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.answer()
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📞 Подзвонити адвокату", callback_data="phone_call")],
         [InlineKeyboardButton("📝 Безкоштовна експрес-оцінка", callback_data="request")],
         [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
     ])
