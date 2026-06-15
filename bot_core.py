@@ -35,6 +35,8 @@ from personality import (
     BOOKS_TEXT,
     SERVICES_TEXT,
     BOOK_INTEREST_TEXT,
+    PHONE_TEXT,
+    PHONE_CALL_TEXT,
 )
 
 # ─── Конфігурація ─────────────────────────────────────────────────────────────
@@ -680,17 +682,45 @@ async def conv_assess_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # ─── Контакти ────────────────────────────────────────────────────────────────
 
+async def cb_phone_call(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer(PHONE_CALL_TEXT, show_alert=True)
+
+
 async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    text = (
-        "📞 +380678390916\n\n"
-        "Адвокат Василь Масюк.\n\n"
-        "Якщо справа термінова — телефонуйте одразу.\n"
-        "Якщо може почекати — опишіть ситуацію в розділі «📝 Консультація».\n\n"
-        "🤖 CooLaw"
-    )
-    await query.edit_message_text(text, reply_markup=kb_home())
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📞 Подзвонити адвокату", callback_data="phone_call")],
+        [InlineKeyboardButton("📝 Безкоштовна експрес-оцінка", callback_data="request")],
+        [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
+    ])
+
+    contact_photo = CONTENT_DIR / "contact" / "vasyl_masiuk_contact.jpg"
+    if contact_photo.exists():
+        try:
+            await query.message.delete()
+            with open(contact_photo, "rb") as photo:
+                await context.bot.send_photo(
+                    chat_id=query.message.chat_id,
+                    photo=photo,
+                    caption=PHONE_TEXT,
+                    reply_markup=keyboard,
+                )
+            return
+        except Exception as e:
+            logger.error("Помилка відправки контактного фото: %s", e)
+
+    if query.message.photo:
+        await query.message.delete()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=PHONE_TEXT,
+            reply_markup=keyboard,
+        )
+    else:
+        await query.edit_message_text(PHONE_TEXT, reply_markup=keyboard)
 
 
 # ─── Про адвоката ─────────────────────────────────────────────────────────────
@@ -955,6 +985,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_archive,         pattern="^archive$"))
     app.add_handler(CallbackQueryHandler(cb_tips,            pattern="^tips$"))
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
+    app.add_handler(CallbackQueryHandler(cb_phone_call,     pattern="^phone_call$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_fallback))
 
