@@ -32,6 +32,7 @@ from personality import (
     ABOUT_TEXT,
     REQUEST_TEXT,
     SUCCESS_REQUEST_TEXT,
+    CONSULTATION_CONTACT_RECEIVED,
     BOOKS_TEXT,
     SERVICES_TEXT,
     BOOK_INTEREST_CONTACT_REQUEST,
@@ -167,9 +168,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    context.user_data.pop("book_interest_pending", None)
-    context.user_data.pop("book_interest_title",   None)
-    context.user_data.pop("book_interest_user",    None)
+    context.user_data.pop("book_interest_pending",        None)
+    context.user_data.pop("book_interest_title",          None)
+    context.user_data.pop("book_interest_user",           None)
+    context.user_data.pop("consultation_contact_pending", None)
+    context.user_data.pop("consultation_original_text",   None)
+    context.user_data.pop("consultation_user",            None)
     if query.message.photo:
         await query.message.delete()
         await context.bot.send_message(
@@ -792,7 +796,8 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"Ситуація: {desc}\n\n"
         f"Telegram name: {user.full_name}\n"
         f"Username: {username}\n"
-        f"Telegram ID: `{user.id}`"
+        f"Telegram ID: `{user.id}`\n\n"
+        f"Контакт: очікується окремим повідомленням"
     )
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
@@ -801,7 +806,15 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         logger.error("Помилка відправки адміну: %s", e)
 
     increment("consultation_requests")
-    await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_after_request())
+    context.user_data["consultation_contact_pending"] = True
+    context.user_data["consultation_original_text"]   = desc
+    context.user_data["consultation_user"]            = {
+        "full_name": user.full_name,
+        "username":  username,
+        "id":        user.id,
+    }
+
+    await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
     return ConversationHandler.END
 
 
@@ -834,6 +847,34 @@ async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         context.user_data.pop("book_interest_user",    None)
 
         await update.message.reply_text(BOOK_INTEREST_CONTACT_RECEIVED, reply_markup=kb_main())
+        return
+
+    if context.user_data.get("consultation_contact_pending"):
+        contact_text  = update.message.text.strip()
+        original_desc = context.user_data.get("consultation_original_text", "—")
+        saved_user    = context.user_data.get("consultation_user", {})
+        full_name     = saved_user.get("full_name", update.message.from_user.full_name)
+        username      = saved_user.get("username", "без username")
+        user_id       = saved_user.get("id", update.message.from_user.id)
+
+        admin_text = (
+            f"☎️ *Контакт до експрес-оцінки*\n\n"
+            f"Контакт користувача:\n{contact_text}\n\n"
+            f"Попередній опис:\n{original_desc}\n\n"
+            f"Користувач: {full_name} ({username})\n"
+            f"Telegram ID: `{user_id}`"
+        )
+        try:
+            await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
+            logger.info("Контакт по консультації — від user_id=%s", user_id)
+        except Exception as e:
+            logger.error("Помилка відправки контакту адміну: %s", e)
+
+        context.user_data.pop("consultation_contact_pending", None)
+        context.user_data.pop("consultation_original_text",   None)
+        context.user_data.pop("consultation_user",            None)
+
+        await update.message.reply_text(CONSULTATION_CONTACT_RECEIVED, reply_markup=kb_main())
         return
 
     text = (
