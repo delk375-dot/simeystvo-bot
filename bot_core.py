@@ -260,13 +260,33 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         action_button = InlineKeyboardButton("📥 Завантажити PDF", url=book["url"])
     else:
         action_button = InlineKeyboardButton("✅ Цікавить книга", callback_data=f"book_interest:{book_id}")
+    keyboard = InlineKeyboardMarkup([
+        [action_button],
+        [InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")],
+    ])
+
+    cover_filename = book.get("cover", "")
+    if cover_filename:
+        cover_path = CONTENT_DIR / "book_covers" / cover_filename
+        if cover_path.exists():
+            try:
+                await query.edit_message_text("📖 Завантажую обкладинку...")
+                with open(cover_path, "rb") as photo:
+                    await context.bot.send_photo(
+                        chat_id=query.message.chat_id,
+                        photo=photo,
+                        caption=text,
+                        parse_mode="Markdown",
+                        reply_markup=keyboard,
+                    )
+                return
+            except Exception as e:
+                logger.error("Помилка відправки обкладинки книги %s: %s", book_id, e)
+
     await query.edit_message_text(
         text,
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([
-            [action_button],
-            [InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")],
-        ]),
+        reply_markup=keyboard,
     )
 
 
