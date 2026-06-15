@@ -34,7 +34,8 @@ from personality import (
     SUCCESS_REQUEST_TEXT,
     BOOKS_TEXT,
     SERVICES_TEXT,
-    BOOK_INTEREST_TEXT,
+    BOOK_INTEREST_CONTACT_REQUEST,
+    BOOK_INTEREST_CONTACT_RECEIVED,
     PHONE_TEXT,
     PHONE_CALL_TEXT,
 )
@@ -166,6 +167,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    context.user_data.pop("book_interest_pending", None)
+    context.user_data.pop("book_interest_title",   None)
+    context.user_data.pop("book_interest_user",    None)
     if query.message.photo:
         await query.message.delete()
         await context.bot.send_message(
@@ -320,12 +324,14 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     book = next((b for b in books if b["id"] == book_id), None)
     user = query.from_user
     username = f"@{user.username}" if user.username else "без username"
+    book_title = book["title"] if book else str(book_id)
 
     admin_text = (
         f"📚 *Інтерес до книги*\n\n"
-        f"Книга: *{book['title'] if book else book_id}*\n"
+        f"Книга: *{book_title}*\n"
         f"Користувач: {user.full_name} ({username})\n"
-        f"Telegram ID: `{user.id}`"
+        f"Telegram ID: `{user.id}`\n\n"
+        f"Контакт: очікується окремим повідомленням"
     )
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
@@ -334,15 +340,23 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.error("Помилка відправки адміну: %s", e)
 
     increment("book_interest")
+    context.user_data["book_interest_pending"] = True
+    context.user_data["book_interest_title"]   = book_title
+    context.user_data["book_interest_user"]    = {
+        "full_name": user.full_name,
+        "username":  username,
+        "id":        user.id,
+    }
+
     if query.message.photo:
         await query.message.delete()
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text=BOOK_INTEREST_TEXT,
+            text=BOOK_INTEREST_CONTACT_REQUEST,
             reply_markup=kb_home(),
         )
     else:
-        await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
+        await query.edit_message_text(BOOK_INTEREST_CONTACT_REQUEST, reply_markup=kb_home())
 
 
 # ─── Порада дня ──────────────────────────────────────────────────────────────
@@ -794,6 +808,34 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 # ─── Fallback: довільний текст поза сценарієм ────────────────────────────────
 
 async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get("book_interest_pending"):
+        contact_text = update.message.text.strip()
+        book_title   = context.user_data.get("book_interest_title", "невідомо")
+        saved_user   = context.user_data.get("book_interest_user", {})
+        full_name    = saved_user.get("full_name", update.message.from_user.full_name)
+        username     = saved_user.get("username", "без username")
+        user_id      = saved_user.get("id", update.message.from_user.id)
+
+        admin_text = (
+            f"📚 *Контакт по книзі*\n\n"
+            f"Книга: *{book_title}*\n"
+            f"Контакт користувача:\n{contact_text}\n\n"
+            f"Користувач: {full_name} ({username})\n"
+            f"Telegram ID: `{user_id}`"
+        )
+        try:
+            await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
+            logger.info("Контакт по книзі [%s] — від user_id=%s", book_title, user_id)
+        except Exception as e:
+            logger.error("Помилка відправки контакту адміну: %s", e)
+
+        context.user_data.pop("book_interest_pending", None)
+        context.user_data.pop("book_interest_title",   None)
+        context.user_data.pop("book_interest_user",    None)
+
+        await update.message.reply_text(BOOK_INTEREST_CONTACT_RECEIVED, reply_markup=kb_main())
+        return
+
     text = (
         "Зрозумів.\n\n"
         "Якщо хочете передати ситуацію адвокату — натисніть «📝 Консультація» "
