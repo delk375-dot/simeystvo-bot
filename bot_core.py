@@ -9,6 +9,7 @@ bot_core.py — ядро бота Сімейство AI.
 import json
 import logging
 import os
+import random
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -68,6 +69,9 @@ def kb_main() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📝 Консультація",  callback_data="request"),
             InlineKeyboardButton("👨‍⚖️ Про адвоката", callback_data="about"),
+        ],
+        [
+            InlineKeyboardButton("🧠 Порада дня",    callback_data="tips"),
         ],
         [
             InlineKeyboardButton("📞 Телефон",       callback_data="phone"),
@@ -220,6 +224,37 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.error("Помилка відправки адміну: %s", e)
 
     await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
+
+
+# ─── Порада дня ──────────────────────────────────────────────────────────────
+
+def _kb_tips() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Ще одна порада", callback_data="tips")],
+        [InlineKeyboardButton("📝 Консультація",   callback_data="request")],
+    ])
+
+
+async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    try:
+        tips = load_json("tips.json")
+        if not tips:
+            raise ValueError("порожньо")
+        tip = random.choice(tips)
+        text = (
+            f"🧠 *Порада від CooLaw*\n\n"
+            f"{tip['text']}\n\n"
+            f"🤖 Якщо ваша ситуація складніша за одну пораду — натисніть «Консультація»."
+        )
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_tips())
+    except Exception as e:
+        logger.error("Помилка завантаження порад: %s", e)
+        await query.edit_message_text(
+            "🧠 Поради тимчасово недоступні.\n\nСпробуйте пізніше або зверніться через «📝 Консультація».",
+            reply_markup=kb_home(),
+        )
 
 
 # ─── Контакти ────────────────────────────────────────────────────────────────
@@ -379,6 +414,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_tips,           pattern="^tips$"))
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_fallback))
