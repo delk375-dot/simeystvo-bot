@@ -266,7 +266,9 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     for key in ("assessment_topic", "assessment_title", "assessment_score",
-                "assessment_level", "assessment_factors", "assessment_q_idx"):
+                "assessment_level", "assessment_factors", "assessment_flags",
+                "assessment_answers", "assessment_sent", "assessment_followup",
+                "assessment_q_idx"):
         context.user_data.pop(key, None)
 
     assessments = load_json("assessments.json")
@@ -457,11 +459,12 @@ async def _show_assess_result(query, context, topic: dict) -> None:
 
 async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
 
     if context.user_data.get("assessment_sent"):
         await query.answer("Я вже передав цю оцінку адвокату.", show_alert=True)
         return
+
+    await query.answer()
 
     user        = query.from_user
     username    = f"@{user.username}" if user.username else "без username"
