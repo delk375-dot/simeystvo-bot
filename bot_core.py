@@ -239,7 +239,18 @@ async def cb_books(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for b in books
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
-    await query.edit_message_text(BOOKS_TEXT, reply_markup=InlineKeyboardMarkup(rows))
+    markup = InlineKeyboardMarkup(rows)
+
+    if query.message.photo:
+        # Повертаємося з фото-повідомлення (обкладинка) — edit_message_text тут неприпустимий
+        await query.message.delete()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=BOOKS_TEXT,
+            reply_markup=markup,
+        )
+    else:
+        await query.edit_message_text(BOOKS_TEXT, reply_markup=markup)
 
 
 async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
