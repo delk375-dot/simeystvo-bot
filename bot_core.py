@@ -121,12 +121,40 @@ def kb_after_request() -> InlineKeyboardMarkup:
     ])
 
 
+def kb_admin() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 Статистика",            callback_data="admin_stats"),
+            InlineKeyboardButton("📢 Опублікувати в канал",  callback_data="admin_publish"),
+        ],
+        [
+            InlineKeyboardButton("👤 Переглянути як клієнт", callback_data="admin_view_client"),
+            InlineKeyboardButton("🎯 Тест: Шанси на успіх",  callback_data="assess"),
+        ],
+        [
+            InlineKeyboardButton("📚 Тест: Книги",           callback_data="books"),
+            InlineKeyboardButton("📝 Тест: Консультація",    callback_data="request"),
+        ],
+    ])
+
+
+ADMIN_PANEL_TEXT = (
+    "👑 *Панель CooLaw*\n\n"
+    "Ви в адмінському режимі.\n\n"
+    "Тут можна перевірити статистику, опублікувати пост у канал або протестувати клієнтські сценарії.\n\n"
+    "Оберіть дію:"
+)
+
+
 # ─── /start ──────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
     if update.effective_user:
         track_start(update.effective_user.id)
+        if update.effective_user.id == ADMIN_CHAT_ID:
+            await update.message.reply_text(ADMIN_PANEL_TEXT, parse_mode="Markdown", reply_markup=kb_admin())
+            return
     await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
 
 
@@ -655,6 +683,56 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
+# ─── Адмін-панель callbacks ──────────────────────────────────────────────────
+
+def _kb_back_admin() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ До панелі", callback_data="back_admin")],
+    ])
+
+
+async def cb_back_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(ADMIN_PANEL_TEXT, parse_mode="Markdown", reply_markup=kb_admin())
+
+
+async def cb_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    from stats import load_stats
+    data = load_stats()
+    text = (
+        f"📊 *Статистика CooLaw*\n\n"
+        f"Стартів /start: {data['total_start_count']}\n"
+        f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
+        f"Заявок на консультацію: {data['consultation_requests']}\n"
+        f"Оцінок завершено: {data['assessment_completed']}\n"
+        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n"
+        f"Інтересів до книг: {data['book_interest']}\n\n"
+        f"🤖 CooLaw"
+    )
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_back_admin())
+
+
+async def cb_admin_publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "📢 *Публікація в канал*\n\n"
+        "Щоб опублікувати пост у канал, надішліть команду:\n\n"
+        "`/publish текст повідомлення`",
+        parse_mode="Markdown",
+        reply_markup=_kb_back_admin(),
+    )
+
+
+async def cb_admin_view_client(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
+
+
 # ─── Публікація в канал ──────────────────────────────────────────────────────
 
 async def publish_to_channel(bot, text: str) -> None:
@@ -751,7 +829,11 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("publish", cmd_publish))
-    app.add_handler(CallbackQueryHandler(cb_back_main,      pattern="^back_main$"))
+    app.add_handler(CallbackQueryHandler(cb_back_admin,         pattern="^back_admin$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_stats,        pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_publish,      pattern="^admin_publish$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_view_client,  pattern="^admin_view_client$"))
+    app.add_handler(CallbackQueryHandler(cb_back_main,          pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(cb_services,       pattern="^services$"))
     app.add_handler(CallbackQueryHandler(cb_service_detail, pattern="^service:"))
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
