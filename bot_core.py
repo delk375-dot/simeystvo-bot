@@ -342,6 +342,10 @@ async def cb_assess_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data["assessment_score"] += answer["score"]
     if "factor" in answer and len(context.user_data["assessment_factors"]) < 3:
         context.user_data["assessment_factors"].append(answer["factor"])
+    if "flag" in answer:
+        flags = context.user_data.setdefault("assessment_flags", [])
+        if answer["flag"] not in flags:
+            flags.append(answer["flag"])
 
     q_idx += 1
     context.user_data["assessment_q_idx"] = q_idx
@@ -352,6 +356,49 @@ async def cb_assess_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await _show_assess_result(query, context, topic)
     return ConversationHandler.END
+
+
+def _build_accident_legal_blocks(context) -> str:
+    flags = context.user_data.get("assessment_flags", [])
+    blocks = []
+
+    if "injuries_serious" in flags:
+        blocks.append(
+            "\n\n⚠️ *На що звернув увагу CooLaw*\n\n"
+            "Тут ситуація може виходити за межі адміністративного провадження.\n\n"
+            "Якщо тілесні ушкодження будуть підтверджені відповідною експертизою, "
+            "можливе застосування ст. 286 КК України.\n\n"
+            "У подібних ситуаціях уже може йтися не лише про штраф чи водійське посвідчення. "
+            "Залежно від обставин законом передбачені, зокрема, обмеження волі на строк до 3 років та інші наслідки.\n\n"
+            "Не драматизую, але тут я б не відкладав консультацію."
+        )
+    elif "injuries_no" in flags:
+        blocks.append(
+            "\n\n⚠️ *На що звернув увагу CooLaw*\n\n"
+            "Схоже, ситуація більше нагадує адміністративне ДТП.\n\n"
+            "У таких випадках часто застосовується ст. 124 КУпАП.\n\n"
+            "Можливі наслідки:\n"
+            "• штраф 850 грн;\n\n"
+            "або\n\n"
+            "• позбавлення права керування транспортними засобами на строк від 6 місяців до 1 року.\n\n"
+            "Звичайно, остаточне рішення залежить від конкретних обставин справи."
+        )
+
+    if "left_scene" in flags:
+        blocks.append(
+            "\n\n⚠️ *На що звернув увагу CooLaw*\n\n"
+            "Тут є ще один момент.\n\n"
+            "Залишення місця ДТП може утворювати окреме адміністративне правопорушення за ст. 122-4 КУпАП.\n\n"
+            "Можливі наслідки:\n"
+            "• штраф;\n\n"
+            "або\n\n"
+            "• громадські роботи від 30 до 40 годин;\n\n"
+            "або\n\n"
+            "• адміністративний арешт від 10 до 15 діб.\n\n"
+            "Послухайте мене уважно: цей фактор я б точно не ігнорував."
+        )
+
+    return "".join(blocks)
 
 
 async def _show_assess_result(query, context, topic: dict) -> None:
@@ -368,13 +415,16 @@ async def _show_assess_result(query, context, topic: dict) -> None:
     else:
         factors_block = "*Ключові фактори:*\nЯвних ризиків не зафіксовано."
 
+    legal_blocks = _build_accident_legal_blocks(context) if topic.get("title") == "ДТП" else ""
+
     text = (
         f"🎯 *Попередня навігація CooLaw*\n\n"
         f"Напрям: {topic['title']}\n"
         f"Орієнтовна готовність: *{score}%*\n\n"
         f"Я подивився на ваші відповіді і бачу таку картину:\n\n"
         f"{factors_block}\n\n"
-        f"*Мій висновок:*\n{topic['results'][level]}\n\n"
+        f"*Мій висновок:*\n{topic['results'][level]}"
+        f"{legal_blocks}\n\n"
         f"_Послухайте мене уважно: це не юридичний висновок і не прогноз суду. "
         f"Це лише моя попередня навігація, щоб ви не йшли навмання._\n\n"
         f"🤖 CooLaw"
@@ -389,7 +439,7 @@ async def _show_assess_result(query, context, topic: dict) -> None:
 
 async def conv_assess_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     for key in ("assessment_topic", "assessment_title", "assessment_score",
-                "assessment_level", "assessment_factors", "assessment_q_idx"):
+                "assessment_level", "assessment_factors", "assessment_flags", "assessment_q_idx"):
         context.user_data.pop(key, None)
     query = update.callback_query
     if query:
@@ -447,7 +497,8 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     assess_score   = context.user_data.pop("assessment_score",   None)
     assess_level   = context.user_data.pop("assessment_level",   None)
     assess_factors = context.user_data.pop("assessment_factors", [])
-    context.user_data.pop("assessment_q_idx", None)
+    context.user_data.pop("assessment_flags",  None)
+    context.user_data.pop("assessment_q_idx",  None)
 
     assessment_block = ""
     if assess_topic:
