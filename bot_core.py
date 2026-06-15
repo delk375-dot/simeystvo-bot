@@ -166,7 +166,15 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
+    if query.message.photo:
+        await query.message.delete()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=WELCOME_TEXT,
+            reply_markup=kb_main(),
+        )
+    else:
+        await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
 
 
 # ─── Юридичні послуги ────────────────────────────────────────────────────────
@@ -343,6 +351,7 @@ def _kb_tips() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Ще одна порада", callback_data="tips")],
         [InlineKeyboardButton("📝 Консультація",   callback_data="request")],
+        [InlineKeyboardButton("🏠 Головне меню",   callback_data="back_main")],
     ])
 
 
