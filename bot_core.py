@@ -79,6 +79,7 @@ def kb_main() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🧠 Порада дня",           callback_data="tips"),
         ],
         [
+            InlineKeyboardButton("📂 Архів CooLaw",         callback_data="archive"),
             InlineKeyboardButton("📞 Телефон",              callback_data="phone"),
         ],
     ])
@@ -289,6 +290,32 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error("Помилка завантаження порад: %s", e)
         await query.edit_message_text(
             "🧠 Поради тимчасово недоступні.\n\nСпробуйте пізніше або зверніться через «📝 Консультація».",
+            reply_markup=kb_home(),
+        )
+
+
+# ─── Архів CooLaw ────────────────────────────────────────────────────────────
+
+def _kb_archive() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Ще одна історія", callback_data="archive")],
+        [InlineKeyboardButton("🏠 Головне меню",    callback_data="back_main")],
+    ])
+
+
+async def cb_archive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    try:
+        stories = load_json("archive.json")
+        if not stories:
+            raise ValueError("порожньо")
+        story = random.choice(stories)
+        await query.edit_message_text(story["text"], parse_mode="Markdown", reply_markup=_kb_archive())
+    except Exception as e:
+        logger.error("Помилка завантаження архіву: %s", e)
+        await query.edit_message_text(
+            "📂 Архів тимчасово недоступний.\n\nСпробуйте пізніше.",
             reply_markup=kb_home(),
         )
 
@@ -840,6 +867,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_assess_transfer, pattern="^assess_transfer$"))
+    app.add_handler(CallbackQueryHandler(cb_archive,         pattern="^archive$"))
     app.add_handler(CallbackQueryHandler(cb_tips,            pattern="^tips$"))
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
