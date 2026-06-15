@@ -300,11 +300,12 @@ async def cb_assess_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("Напрям не знайдено", show_alert=True)
         return ASSESS_TOPIC
 
-    context.user_data["assessment_topic"]  = topic_key
-    context.user_data["assessment_title"]  = topic["title"]
-    context.user_data["assessment_score"]  = 50
+    context.user_data["assessment_topic"]   = topic_key
+    context.user_data["assessment_title"]   = topic["title"]
+    context.user_data["assessment_score"]   = 50
     context.user_data["assessment_factors"] = []
-    context.user_data["assessment_q_idx"]  = 0
+    context.user_data["assessment_answers"] = []
+    context.user_data["assessment_q_idx"]   = 0
 
     await _show_assess_question(query, context, topic)
     return ASSESS_Q
@@ -342,6 +343,10 @@ async def cb_assess_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data["assessment_score"] += answer["score"]
     if "factor" in answer and len(context.user_data["assessment_factors"]) < 3:
         context.user_data["assessment_factors"].append(answer["factor"])
+    context.user_data["assessment_answers"].append({
+        "question": question["text"],
+        "answer_label": answer["label"],
+    })
     if "flag" in answer:
         flags = context.user_data.setdefault("assessment_flags", [])
         if answer["flag"] not in flags:
@@ -443,16 +448,75 @@ async def _show_assess_result(query, context, topic: dict) -> None:
         f"🤖 CooLaw"
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Передати адвокату", callback_data="request")],
+        [InlineKeyboardButton("📝 Передати адвокату", callback_data="assess_transfer")],
         [InlineKeyboardButton("🔄 Пройти ще раз",    callback_data="assess")],
         [InlineKeyboardButton("🏠 Головне меню",      callback_data="back_main")],
     ])
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
+async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    if context.user_data.get("assessment_sent"):
+        await query.answer("Я вже передав цю оцінку адвокату.", show_alert=True)
+        return
+
+    user        = query.from_user
+    username    = f"@{user.username}" if user.username else "без username"
+    topic_title = context.user_data.get("assessment_title", "не вказано")
+    score       = context.user_data.get("assessment_score", "—")
+    level       = context.user_data.get("assessment_level", "—")
+    factors     = context.user_data.get("assessment_factors", [])
+    answers     = context.user_data.get("assessment_answers", [])
+
+    level_ua     = {"high": "висока", "medium": "середня", "low": "низька"}.get(level, level)
+    answers_text = "\n\n".join(
+        f"{i + 1}. {a['question']}\n   Відповідь: {a['answer_label']}"
+        for i, a in enumerate(answers)
+    )
+    factors_str = "\n".join(f"• {f}" for f in factors) if factors else "не визначено"
+
+    admin_text = (
+        f"🎯 *Нова заявка після оцінки CooLaw*\n\n"
+        f"Напрям: {topic_title}\n"
+        f"Орієнтовна оцінка: {score}%\n"
+        f"Рівень: {level_ua}\n\n"
+        f"*Відповіді користувача:*\n\n"
+        f"{answers_text}\n\n"
+        f"*Ключові фактори:*\n{factors_str}\n\n"
+        f"Telegram name: {user.full_name}\n"
+        f"Username: {username}\n"
+        f"Telegram ID: `{user.id}`"
+    )
+    try:
+        await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
+        logger.info("Оцінка передана адміну — user_id=%s", user.id)
+    except Exception as e:
+        logger.error("Помилка відправки адміну: %s", e)
+
+    context.user_data["assessment_sent"]     = True
+    context.user_data["assessment_followup"] = True
+
+    await query.edit_message_text(
+        "✅ Передав вашу попередню оцінку адвокату.\n\n"
+        "Василь Васильович або хтось із команди зможе подивитися відповіді й зрозуміти, з чого починати.\n\n"
+        "Якщо хочете — можете ще одним повідомленням дописати деталі ситуації.\n\n"
+        "Але базову картину я вже передав.\n\n"
+        "🤖 CooLaw",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Додати деталі",  callback_data="request")],
+            [InlineKeyboardButton("🔄 Пройти ще раз",  callback_data="assess")],
+            [InlineKeyboardButton("🏠 Головне меню",   callback_data="back_main")],
+        ]),
+    )
+
+
 async def conv_assess_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     for key in ("assessment_topic", "assessment_title", "assessment_score",
-                "assessment_level", "assessment_factors", "assessment_flags", "assessment_q_idx"):
+                "assessment_level", "assessment_factors", "assessment_flags",
+                "assessment_answers", "assessment_sent", "assessment_followup", "assessment_q_idx"):
         context.user_data.pop(key, None)
     query = update.callback_query
     if query:
@@ -505,34 +569,30 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     service_name = context.user_data.pop("selected_service", None)
     napryam = f"Напрям: {service_name}" if service_name else "Напрям: не вказано"
 
-    assess_topic   = context.user_data.pop("assessment_topic",   None)
-    assess_title   = context.user_data.pop("assessment_title",   None)
-    assess_score   = context.user_data.pop("assessment_score",   None)
-    assess_level   = context.user_data.pop("assessment_level",   None)
-    assess_factors = context.user_data.pop("assessment_factors", [])
-    context.user_data.pop("assessment_flags",  None)
-    context.user_data.pop("assessment_q_idx",  None)
+    followup       = context.user_data.pop("assessment_followup", False)
+    assess_title   = context.user_data.pop("assessment_title",    None)
+    context.user_data.pop("assessment_topic",   None)
+    context.user_data.pop("assessment_score",   None)
+    context.user_data.pop("assessment_level",   None)
+    context.user_data.pop("assessment_factors", None)
+    context.user_data.pop("assessment_answers", None)
+    context.user_data.pop("assessment_flags",   None)
+    context.user_data.pop("assessment_sent",    None)
+    context.user_data.pop("assessment_q_idx",   None)
 
-    assessment_block = ""
-    if assess_topic:
-        level_ua    = {"high": "висока", "medium": "середня", "low": "низька"}.get(assess_level, assess_level)
-        factors_str = "\n".join(f"• {f}" for f in assess_factors) if assess_factors else "не визначено"
-        assessment_block = (
-            f"\n\n🧭 *Оцінка CooLaw:*\n"
-            f"Напрям: {assess_title}\n"
-            f"Готовність: {assess_score}%\n"
-            f"Рівень: {level_ua}\n"
-            f"Фактори:\n{factors_str}"
-        )
+    if followup:
+        header  = f"📝 *Уточнення після оцінки CooLaw*"
+        napryam = f"Напрям: {assess_title or 'не вказано'}"
+    else:
+        header  = f"📝 *Нова заявка на консультацію*"
 
     admin_text = (
-        f"📝 *Нова заявка на консультацію*\n\n"
+        f"{header}\n\n"
         f"{napryam}\n\n"
         f"Ситуація: {desc}\n\n"
         f"Telegram name: {user.full_name}\n"
         f"Username: {username}\n"
         f"Telegram ID: `{user.id}`"
-        f"{assessment_block}"
     )
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
@@ -664,7 +724,8 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_tips,           pattern="^tips$"))
+    app.add_handler(CallbackQueryHandler(cb_assess_transfer, pattern="^assess_transfer$"))
+    app.add_handler(CallbackQueryHandler(cb_tips,            pattern="^tips$"))
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_fallback))
