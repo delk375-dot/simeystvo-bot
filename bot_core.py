@@ -268,9 +268,10 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     cover_filename = book.get("cover", "")
     if cover_filename:
         cover_path = CONTENT_DIR / "book_covers" / cover_filename
+        logger.info("Обкладинка книги %s: %s (exists=%s)", book_id, cover_path, cover_path.exists())
         if cover_path.exists():
             try:
-                await query.edit_message_text("📖 Завантажую обкладинку...")
+                await query.message.delete()
                 with open(cover_path, "rb") as photo:
                     await context.bot.send_photo(
                         chat_id=query.message.chat_id,
