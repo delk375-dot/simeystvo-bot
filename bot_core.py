@@ -56,6 +56,8 @@ def load_json(filename: str) -> list:
 
 # ─── Стани розмови ───────────────────────────────────────────────────────────
 REQUEST_DESC = 0
+ASSESS_TOPIC = 10
+ASSESS_Q     = 11
 
 
 # ─── Клавіатури ──────────────────────────────────────────────────────────────
@@ -63,18 +65,19 @@ REQUEST_DESC = 0
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🏛 Послуги",       callback_data="services"),
-            InlineKeyboardButton("📚 Книги",         callback_data="books"),
+            InlineKeyboardButton("🏛 Послуги",              callback_data="services"),
+            InlineKeyboardButton("📚 Книги",                callback_data="books"),
         ],
         [
-            InlineKeyboardButton("📝 Консультація",  callback_data="request"),
-            InlineKeyboardButton("👨‍⚖️ Про адвоката", callback_data="about"),
+            InlineKeyboardButton("📝 Консультація",         callback_data="request"),
+            InlineKeyboardButton("🧭 Оцінити ситуацію",    callback_data="assess"),
         ],
         [
-            InlineKeyboardButton("🧠 Порада дня",    callback_data="tips"),
+            InlineKeyboardButton("👨‍⚖️ Про адвоката",        callback_data="about"),
+            InlineKeyboardButton("🧠 Порада дня",           callback_data="tips"),
         ],
         [
-            InlineKeyboardButton("📞 Телефон",       callback_data="phone"),
+            InlineKeyboardButton("📞 Телефон",              callback_data="phone"),
         ],
     ])
 
@@ -257,6 +260,139 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
+# ─── Оцінка ситуації (ConversationHandler) ───────────────────────────────────
+
+async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    for key in ("assessment_topic", "assessment_title", "assessment_score",
+                "assessment_level", "assessment_factors", "assessment_q_idx"):
+        context.user_data.pop(key, None)
+
+    assessments = load_json("assessments.json")
+    rows = [
+        [InlineKeyboardButton(data["title"], callback_data=f"assess_topic:{key}")]
+        for key, data in assessments.items()
+    ]
+    rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
+    await query.edit_message_text(
+        "🧭 *Оцінити ситуацію*\n\n"
+        "Я поставлю кілька запитань і дам попередній орієнтир.\n\n"
+        "_Це не юридичний висновок — просто навігація від CooLaw._\n\n"
+        "Оберіть напрям:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+    return ASSESS_TOPIC
+
+
+async def cb_assess_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    topic_key = query.data.split(":", 1)[1]
+    assessments = load_json("assessments.json")
+    topic = assessments.get(topic_key)
+    if not topic:
+        await query.answer("Напрям не знайдено", show_alert=True)
+        return ASSESS_TOPIC
+
+    context.user_data["assessment_topic"]  = topic_key
+    context.user_data["assessment_title"]  = topic["title"]
+    context.user_data["assessment_score"]  = 50
+    context.user_data["assessment_factors"] = []
+    context.user_data["assessment_q_idx"]  = 0
+
+    await _show_assess_question(query, context, topic)
+    return ASSESS_Q
+
+
+async def _show_assess_question(query, context, topic: dict) -> None:
+    q_idx    = context.user_data["assessment_q_idx"]
+    question = topic["questions"][q_idx]
+    total    = len(topic["questions"])
+    text = (
+        f"🧭 *{topic['title']}*\n\n"
+        f"Питання {q_idx + 1} з {total}\n\n"
+        f"{question['text']}"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(question["answers"]["yes"]["label"],     callback_data="assess_ans:yes"),
+        InlineKeyboardButton(question["answers"]["no"]["label"],      callback_data="assess_ans:no"),
+        InlineKeyboardButton(question["answers"]["unknown"]["label"], callback_data="assess_ans:unknown"),
+    ]])
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def cb_assess_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query      = update.callback_query
+    await query.answer()
+    answer_key = query.data.split(":", 1)[1]
+
+    assessments = load_json("assessments.json")
+    topic_key   = context.user_data["assessment_topic"]
+    topic       = assessments[topic_key]
+    q_idx       = context.user_data["assessment_q_idx"]
+    question    = topic["questions"][q_idx]
+    answer      = question["answers"][answer_key]
+
+    context.user_data["assessment_score"] += answer["score"]
+    if "factor" in answer and len(context.user_data["assessment_factors"]) < 3:
+        context.user_data["assessment_factors"].append(answer["factor"])
+
+    q_idx += 1
+    context.user_data["assessment_q_idx"] = q_idx
+
+    if q_idx < len(topic["questions"]):
+        await _show_assess_question(query, context, topic)
+        return ASSESS_Q
+
+    await _show_assess_result(query, context, topic)
+    return ConversationHandler.END
+
+
+async def _show_assess_result(query, context, topic: dict) -> None:
+    raw_score = context.user_data["assessment_score"]
+    score     = max(0, min(100, raw_score))
+    level     = "high" if score >= 70 else ("medium" if score >= 35 else "low")
+
+    context.user_data["assessment_score"] = score
+    context.user_data["assessment_level"] = level
+
+    factors     = context.user_data.get("assessment_factors", [])
+    factors_str = ("\n\n*Ключові фактори:*\n" + "\n".join(f"• {f}" for f in factors)) if factors else ""
+
+    text = (
+        f"🧭 *Попередня оцінка ситуації*\n\n"
+        f"Напрям: {topic['title']}\n"
+        f"Орієнтовна готовність: *{score}%*"
+        f"{factors_str}\n\n"
+        f"*Рекомендація:*\n{topic['results'][level]}\n\n"
+        f"⚠️ _Це не юридичний висновок, а попередня навігація від CooLaw._"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Передати адвокату", callback_data="request")],
+        [InlineKeyboardButton("🔄 Пройти ще раз",    callback_data="assess")],
+        [InlineKeyboardButton("🏠 Головне меню",      callback_data="back_main")],
+    ])
+    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def conv_assess_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    for key in ("assessment_topic", "assessment_title", "assessment_score",
+                "assessment_level", "assessment_factors", "assessment_q_idx"):
+        context.user_data.pop(key, None)
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
+    elif update.message:
+        await update.message.reply_text(
+            "Зрозумів. Повертаємось на початок.\n\n🤖 CooLaw",
+            reply_markup=kb_home(),
+        )
+    return ConversationHandler.END
+
+
 # ─── Контакти ────────────────────────────────────────────────────────────────
 
 async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -296,6 +432,25 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     service_name = context.user_data.pop("selected_service", None)
     napryam = f"Напрям: {service_name}" if service_name else "Напрям: не вказано"
 
+    assess_topic   = context.user_data.pop("assessment_topic",   None)
+    assess_title   = context.user_data.pop("assessment_title",   None)
+    assess_score   = context.user_data.pop("assessment_score",   None)
+    assess_level   = context.user_data.pop("assessment_level",   None)
+    assess_factors = context.user_data.pop("assessment_factors", [])
+    context.user_data.pop("assessment_q_idx", None)
+
+    assessment_block = ""
+    if assess_topic:
+        level_ua    = {"high": "висока", "medium": "середня", "low": "низька"}.get(assess_level, assess_level)
+        factors_str = "\n".join(f"• {f}" for f in assess_factors) if assess_factors else "не визначено"
+        assessment_block = (
+            f"\n\n🧭 *Оцінка CooLaw:*\n"
+            f"Напрям: {assess_title}\n"
+            f"Готовність: {assess_score}%\n"
+            f"Рівень: {level_ua}\n"
+            f"Фактори:\n{factors_str}"
+        )
+
     admin_text = (
         f"📝 *Нова заявка на консультацію*\n\n"
         f"{napryam}\n\n"
@@ -303,6 +458,7 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"Telegram name: {user.full_name}\n"
         f"Username: {username}\n"
         f"Telegram ID: `{user.id}`"
+        f"{assessment_block}"
     )
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
@@ -405,7 +561,27 @@ def build_application() -> Application:
         allow_reentry=True,
     )
 
+    assess_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(cb_assess_start, pattern="^assess$")],
+        states={
+            ASSESS_TOPIC: [
+                CallbackQueryHandler(cb_assess_topic, pattern="^assess_topic:"),
+            ],
+            ASSESS_Q: [
+                CallbackQueryHandler(cb_assess_answer, pattern="^assess_ans:"),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("start",  conv_assess_cancel),
+            CommandHandler("cancel", conv_assess_cancel),
+            CallbackQueryHandler(conv_assess_cancel, pattern="^back_main$"),
+        ],
+        per_message=False,
+        allow_reentry=True,
+    )
+
     app.add_handler(request_conv)
+    app.add_handler(assess_conv)
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("publish", cmd_publish))
     app.add_handler(CallbackQueryHandler(cb_back_main,      pattern="^back_main$"))
