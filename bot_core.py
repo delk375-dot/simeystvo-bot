@@ -317,7 +317,13 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"{tip['text']}\n\n"
             f"🤖 Якщо ваша ситуація складніша за одну пораду — натисніть «Консультація»."
         )
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_tips())
+        try:
+            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_tips())
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                pass  # та сама порада обрана двічі підряд — повідомлення вже актуальне
+            else:
+                raise
     except Exception as e:
         logger.error("Помилка завантаження порад: %s", e)
         await query.edit_message_text(
