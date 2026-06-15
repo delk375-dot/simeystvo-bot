@@ -14,6 +14,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -325,7 +326,7 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-# ─── Архів CooLaw ────────────────────────────────────────────────────────────
+# ─── Архів справ ─────────────────────────────────────────────────────────────
 
 def _kb_archive() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -342,11 +343,17 @@ async def cb_archive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if not stories:
             raise ValueError("порожньо")
         story = random.choice(stories)
-        await query.edit_message_text(story["text"], parse_mode="Markdown", reply_markup=_kb_archive())
+        try:
+            await query.edit_message_text(story["text"], parse_mode="Markdown", reply_markup=_kb_archive())
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                pass  # та сама історія обрана двічі підряд — повідомлення вже актуальне
+            else:
+                raise
     except Exception as e:
         logger.error("Помилка завантаження архіву: %s", e)
         await query.edit_message_text(
-            "📂 Архів тимчасово недоступний.\n\nСпробуйте пізніше.",
+            "📚 Архів справ тимчасово недоступний.\n\nСпробуйте пізніше.",
             reply_markup=kb_home(),
         )
 
