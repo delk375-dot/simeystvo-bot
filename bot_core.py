@@ -165,7 +165,7 @@ async def cb_books(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     books = load_json("books.json")
     rows = [
         [InlineKeyboardButton(
-            f"📘 {b['title']}\n{'🎁' if b.get('url') else '💰'} {b['price']}",
+            f"📘 {b.get('short_title', b['title'])}\n{'🎁' if b.get('url') else '💰'} {b['price']}",
             callback_data=f"book:{b['id']}",
         )]
         for b in books
