@@ -173,6 +173,7 @@ async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     context.user_data.pop("book_interest_user",           None)
     context.user_data.pop("consultation_contact_pending", None)
     context.user_data.pop("consultation_original_text",   None)
+    context.user_data.pop("consultation_topic",           None)
     context.user_data.pop("consultation_user",            None)
     if query.message.photo:
         await query.message.delete()
@@ -441,7 +442,9 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     for key in ("assessment_topic", "assessment_title", "assessment_score",
                 "assessment_level", "assessment_factors", "assessment_flags",
                 "assessment_answers", "assessment_sent", "assessment_followup",
-                "assessment_q_idx"):
+                "assessment_q_idx",
+                "consultation_contact_pending", "consultation_original_text",
+                "consultation_topic", "consultation_user"):
         context.user_data.pop(key, None)
 
     assessments = load_json("assessments.json")
@@ -665,7 +668,8 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"*Ключові фактори:*\n{factors_str}\n\n"
         f"Telegram name: {user.full_name}\n"
         f"Username: {username}\n"
-        f"Telegram ID: `{user.id}`"
+        f"Telegram ID: `{user.id}`\n\n"
+        f"Контакт: очікується окремим повідомленням"
     )
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
@@ -676,11 +680,19 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data["assessment_sent"]     = True
     context.user_data["assessment_followup"] = True
+    context.user_data["consultation_contact_pending"] = True
+    context.user_data["consultation_original_text"]   = f"Оцінка CooLaw: {topic_title} — {score}% ({level_ua})"
+    context.user_data["consultation_topic"]           = f"Напрям: {topic_title}"
+    context.user_data["consultation_user"]            = {
+        "full_name": user.full_name,
+        "username":  username,
+        "id":        user.id,
+    }
 
     await query.edit_message_text(
         "✅ Передав вашу оцінку адвокату.\n\n"
-        "Василь Васильович або хтось із команди ознайомиться з відповідями та зв'яжеться з вами для консультації.\n\n"
-        "Базову картину ситуації я вже передав, тому вам не доведеться пояснювати все з нуля.\n\n"
+        "Василь Васильович або хтось із команди ознайомиться з відповідями та зв'яжеться з вами.\n\n"
+        "Якщо хочете, щоб зв'язались швидше — напишіть одним повідомленням номер телефону або інший контакт.\n\n"
         "🤖 CooLaw",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 Додати деталі",  callback_data="request")],
@@ -808,6 +820,7 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     increment("consultation_requests")
     context.user_data["consultation_contact_pending"] = True
     context.user_data["consultation_original_text"]   = desc
+    context.user_data["consultation_topic"]           = napryam
     context.user_data["consultation_user"]            = {
         "full_name": user.full_name,
         "username":  username,
@@ -852,15 +865,17 @@ async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if context.user_data.get("consultation_contact_pending"):
         contact_text  = update.message.text.strip()
         original_desc = context.user_data.get("consultation_original_text", "—")
+        topic         = context.user_data.get("consultation_topic", "не вказано")
         saved_user    = context.user_data.get("consultation_user", {})
         full_name     = saved_user.get("full_name", update.message.from_user.full_name)
         username      = saved_user.get("username", "без username")
         user_id       = saved_user.get("id", update.message.from_user.id)
 
         admin_text = (
-            f"☎️ *Контакт до експрес-оцінки*\n\n"
+            f"☎️ *Контакт до консультації*\n\n"
             f"Контакт користувача:\n{contact_text}\n\n"
-            f"Попередній опис:\n{original_desc}\n\n"
+            f"Попередня заявка:\n{original_desc}\n\n"
+            f"Напрям:\n{topic}\n\n"
             f"Користувач: {full_name} ({username})\n"
             f"Telegram ID: `{user_id}`"
         )
@@ -872,6 +887,7 @@ async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         context.user_data.pop("consultation_contact_pending", None)
         context.user_data.pop("consultation_original_text",   None)
+        context.user_data.pop("consultation_topic",           None)
         context.user_data.pop("consultation_user",            None)
 
         await update.message.reply_text(CONSULTATION_CONTACT_RECEIVED, reply_markup=kb_main())
