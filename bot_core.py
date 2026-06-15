@@ -70,7 +70,7 @@ def kb_main() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("📝 Консультація",         callback_data="request"),
-            InlineKeyboardButton("🧭 Оцінити ситуацію",    callback_data="assess"),
+            InlineKeyboardButton("🎯 Шанси на успіх",       callback_data="assess"),
         ],
         [
             InlineKeyboardButton("👨‍⚖️ Про адвоката",        callback_data="about"),
@@ -276,10 +276,14 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     await query.edit_message_text(
-        "🧭 *Оцінити ситуацію*\n\n"
-        "Я поставлю кілька запитань і дам попередній орієнтир.\n\n"
-        "_Це не юридичний висновок — просто навігація від CooLaw._\n\n"
-        "Оберіть напрям:",
+        "🎯 *Шанси на успіх*\n\n"
+        "Так, я знаю, звучить сміливо.\n\n"
+        "Василь Васильович, можливо, сказав би: «Мій електронний друже, не роздавай людям прогнози без аналізу документів».\n\n"
+        "І був би правий.\n\n"
+        "Тому домовимось так: я не прогнозую рішення суду і не даю юридичний висновок.\n\n"
+        "Я просто ставлю кілька питань і показую, наскільки ситуація виглядає підготовленою.\n\n"
+        "Якщо коротко — це моя попередня навігація.\n\n"
+        "Оберіть напрям, з якого почнемо:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(rows),
     )
@@ -311,7 +315,7 @@ async def _show_assess_question(query, context, topic: dict) -> None:
     question = topic["questions"][q_idx]
     total    = len(topic["questions"])
     text = (
-        f"🧭 *{topic['title']}*\n\n"
+        f"🎯 *{topic['title']}*\n\n"
         f"Питання {q_idx + 1} з {total}\n\n"
         f"{question['text']}"
     )
@@ -359,15 +363,21 @@ async def _show_assess_result(query, context, topic: dict) -> None:
     context.user_data["assessment_level"] = level
 
     factors     = context.user_data.get("assessment_factors", [])
-    factors_str = ("\n\n*Ключові фактори:*\n" + "\n".join(f"• {f}" for f in factors)) if factors else ""
+    if factors:
+        factors_block = "*Ключові фактори:*\n" + "\n".join(f"• {f}" for f in factors)
+    else:
+        factors_block = "*Ключові фактори:*\nЯвних ризиків не зафіксовано."
 
     text = (
-        f"🧭 *Попередня оцінка ситуації*\n\n"
+        f"🎯 *Попередня навігація CooLaw*\n\n"
         f"Напрям: {topic['title']}\n"
-        f"Орієнтовна готовність: *{score}%*"
-        f"{factors_str}\n\n"
-        f"*Рекомендація:*\n{topic['results'][level]}\n\n"
-        f"⚠️ _Це не юридичний висновок, а попередня навігація від CooLaw._"
+        f"Орієнтовна готовність: *{score}%*\n\n"
+        f"Я подивився на ваші відповіді і бачу таку картину:\n\n"
+        f"{factors_block}\n\n"
+        f"*Мій висновок:*\n{topic['results'][level]}\n\n"
+        f"_Послухайте мене уважно: це не юридичний висновок і не прогноз суду. "
+        f"Це лише моя попередня навігація, щоб ви не йшли навмання._\n\n"
+        f"🤖 CooLaw"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Передати адвокату", callback_data="request")],
