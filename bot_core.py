@@ -324,7 +324,15 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.error("Помилка відправки адміну: %s", e)
 
     increment("book_interest")
-    await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
+    if query.message.photo:
+        await query.message.delete()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=BOOK_INTEREST_TEXT,
+            reply_markup=kb_home(),
+        )
+    else:
+        await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
 
 
 # ─── Порада дня ──────────────────────────────────────────────────────────────
