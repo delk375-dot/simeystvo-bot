@@ -87,8 +87,7 @@ def kb_main() -> InlineKeyboardMarkup:
 
 def kb_services() -> InlineKeyboardMarkup:
     services = load_json("services.json")
-    # Кнопки по 2 в ряд
-    rows = []
+    rows = [[InlineKeyboardButton("💰 Скільки це може коштувати?", callback_data="cost_info")]]
     for i in range(0, len(services), 2):
         pair = services[i:i + 2]
         rows.append([
@@ -191,6 +190,38 @@ async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"⏱ *Строки:* {service['typical_terms']}"
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb_service_detail())
+
+
+# ─── Вартість послуг ─────────────────────────────────────────────────────────
+
+COST_INFO_TEXT = (
+    "💰 *Скільки це може коштувати?*\n\n"
+    "Послухайте мене уважно.\n\n"
+    "Розлучення, спадщина, ДТП чи кримінальна справа — це різний обсяг роботи.\n\n"
+    "Тому я не люблю називати цифри навмання.\n\n"
+    "Це було б схоже на те, як лікар називає вартість лікування ще до огляду пацієнта.\n\n"
+    "Якщо хочете отримати орієнтир саме по своїй ситуації — просто опишіть проблему своїми словами.\n\n"
+    "Я передам фабулу справи адвокату.\n\n"
+    "Після ознайомлення із ситуацією Василь Васильович або хтось із команди повідомить:\n\n"
+    "• можливі варіанти вирішення;\n\n"
+    "• орієнтовну вартість допомоги;\n\n"
+    "• що можна зробити вже зараз.\n\n"
+    "🤖 Моє завдання — допомогти вам зорієнтуватися і доставити інформацію адвокату."
+)
+
+
+async def cb_cost_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        COST_INFO_TEXT,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
+            [InlineKeyboardButton("⚖️ Послуги",          callback_data="services")],
+            [InlineKeyboardButton("🏠 Головне меню",     callback_data="back_main")],
+        ]),
+    )
 
 
 # ─── Книги ───────────────────────────────────────────────────────────────────
@@ -863,6 +894,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_back_main,          pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(cb_services,       pattern="^services$"))
     app.add_handler(CallbackQueryHandler(cb_service_detail, pattern="^service:"))
+    app.add_handler(CallbackQueryHandler(cb_cost_info,      pattern="^cost_info$"))
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
