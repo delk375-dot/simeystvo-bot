@@ -181,11 +181,15 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"{book['description']}\n\n"
         f"💰 *Ціна:* {book['price']}"
     )
+    if book.get("url"):
+        action_button = InlineKeyboardButton("📥 Завантажити PDF", url=book["url"])
+    else:
+        action_button = InlineKeyboardButton("✅ Цікавить книга", callback_data=f"book_interest:{book_id}")
     await query.edit_message_text(
         text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Цікавить книга", callback_data=f"book_interest:{book_id}")],
+            [action_button],
             [InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")],
         ]),
     )
