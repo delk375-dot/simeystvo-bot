@@ -448,7 +448,7 @@ async def _show_assess_result(query, context, topic: dict) -> None:
         f"🤖 CooLaw"
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Передати адвокату", callback_data="assess_transfer")],
+        [InlineKeyboardButton("📝 Передати адвокату та отримати консультацію", callback_data="assess_transfer")],
         [InlineKeyboardButton("🔄 Пройти ще раз",    callback_data="assess")],
         [InlineKeyboardButton("🏠 Головне меню",      callback_data="back_main")],
     ])
@@ -500,10 +500,9 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["assessment_followup"] = True
 
     await query.edit_message_text(
-        "✅ Передав вашу попередню оцінку адвокату.\n\n"
-        "Василь Васильович або хтось із команди зможе подивитися відповіді й зрозуміти, з чого починати.\n\n"
-        "Якщо хочете — можете ще одним повідомленням дописати деталі ситуації.\n\n"
-        "Але базову картину я вже передав.\n\n"
+        "✅ Передав вашу оцінку адвокату.\n\n"
+        "Василь Васильович або хтось із команди ознайомиться з відповідями та зв'яжеться з вами для консультації.\n\n"
+        "Базову картину ситуації я вже передав, тому вам не доведеться пояснювати все з нуля.\n\n"
         "🤖 CooLaw",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 Додати деталі",  callback_data="request")],
