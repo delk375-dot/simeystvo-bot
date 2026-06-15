@@ -79,7 +79,7 @@ def kb_main() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🧠 Порада дня",           callback_data="tips"),
         ],
         [
-            InlineKeyboardButton("📂 Архів CooLaw",         callback_data="archive"),
+            InlineKeyboardButton("📚 Архів справ",           callback_data="archive"),
             InlineKeyboardButton("📞 Телефон",              callback_data="phone"),
         ],
     ])
