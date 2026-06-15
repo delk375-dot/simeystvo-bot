@@ -24,6 +24,8 @@ from telegram.ext import (
     filters,
 )
 
+from stats import track_start, increment
+
 from personality import (
     WELCOME_TEXT,
     ABOUT_TEXT,
@@ -123,6 +125,8 @@ def kb_after_request() -> InlineKeyboardMarkup:
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
+    if update.effective_user:
+        track_start(update.effective_user.id)
     await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
 
 
@@ -226,6 +230,7 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
+    increment("book_interest")
     await query.edit_message_text(BOOK_INTEREST_TEXT, reply_markup=kb_home())
 
 
@@ -454,6 +459,7 @@ async def _show_assess_result(query, context, topic: dict) -> None:
         [InlineKeyboardButton("🔄 Пройти ще раз",    callback_data="assess")],
         [InlineKeyboardButton("🏠 Головне меню",      callback_data="back_main")],
     ])
+    increment("assessment_completed")
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
@@ -496,6 +502,7 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
         logger.info("Оцінка передана адміну — user_id=%s", user.id)
+        increment("assessment_sent_to_admin")
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
@@ -602,6 +609,7 @@ async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as e:
         logger.error("Помилка відправки адміну: %s", e)
 
+    increment("consultation_requests")
     await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_after_request())
     return ConversationHandler.END
 
@@ -623,6 +631,28 @@ async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
         ]),
     )
+
+
+# ─── Статистика ──────────────────────────────────────────────────────────────
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or update.effective_user.id != ADMIN_CHAT_ID:
+        await update.message.reply_text("Ця команда доступна тільки адміну.")
+        return
+
+    from stats import load_stats
+    data = load_stats()
+    text = (
+        f"📊 *Статистика CooLaw*\n\n"
+        f"Стартів /start: {data['total_start_count']}\n"
+        f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
+        f"Заявок на консультацію: {data['consultation_requests']}\n"
+        f"Оцінок завершено: {data['assessment_completed']}\n"
+        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n"
+        f"Інтересів до книг: {data['book_interest']}\n\n"
+        f"🤖 CooLaw"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 # ─── Публікація в канал ──────────────────────────────────────────────────────
@@ -719,6 +749,7 @@ def build_application() -> Application:
     app.add_handler(request_conv)
     app.add_handler(assess_conv)
     app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("publish", cmd_publish))
     app.add_handler(CallbackQueryHandler(cb_back_main,      pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(cb_services,       pattern="^services$"))
