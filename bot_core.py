@@ -22,7 +22,6 @@ from telegram.ext import (
     ConversationHandler,
     ContextTypes,
     MessageHandler,
-    PicklePersistence,
     filters,
 )
 
@@ -1036,11 +1035,7 @@ def build_application() -> Application:
     Створює Application і реєструє всі handlers.
     Не викликає initialize() / start() — це робить виклик ззовні.
     """
-    # /tmp persistence helps survive warm restarts inside one Vercel instance,
-    # but is not a replacement for external storage like Redis/KV.
-    persistence = PicklePersistence(filepath="/tmp/coolaw_persistence.pkl")
-
-    app = Application.builder().token(TOKEN).persistence(persistence).build()
+    app = Application.builder().token(TOKEN).build()
 
     request_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(cb_request, pattern="^request$")],
