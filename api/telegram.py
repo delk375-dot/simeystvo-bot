@@ -18,8 +18,15 @@ import logging
 import os
 import sys
 
-# Корінь проекту в sys.path — щоб bot_core та personality знаходились
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# api/ треба прибрати з sys.path ДО будь-яких імпортів:
+# файл api/telegram.py має те саме ім'я, що й пакет python-telegram-bot,
+# тому Python знаходить наш файл замість пакету → circular import.
+_api_dir = os.path.dirname(os.path.abspath(__file__))
+_root_dir = os.path.dirname(_api_dir)
+if _api_dir in sys.path:
+    sys.path.remove(_api_dir)
+if _root_dir not in sys.path:
+    sys.path.insert(0, _root_dir)
 
 from flask import Flask, request
 from telegram import Update
@@ -37,10 +44,11 @@ _loop = None
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
-    global _loop
+    global _loop, _tg_app
     if _loop is None or _loop.is_closed():
         _loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_loop)
+        _tg_app = None  # loop змінився — Application треба перестворити
     return _loop
 
 

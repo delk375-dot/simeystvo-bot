@@ -712,10 +712,7 @@ async def conv_assess_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
         await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
     elif update.message:
-        await update.message.reply_text(
-            "Зрозумів. Повертаємось на початок.\n\n🤖 CooLaw",
-            reply_markup=kb_home(),
-        )
+        await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
     return ConversationHandler.END
 
 
@@ -1021,10 +1018,7 @@ async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await query.answer()
         await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
     elif update.message:
-        await update.message.reply_text(
-            "Зрозумів. Повертаємось на початок.\n\n🤖 CooLaw",
-            reply_markup=kb_home(),
-        )
+        await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
     return ConversationHandler.END
 
 
