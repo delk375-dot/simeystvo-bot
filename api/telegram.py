@@ -66,8 +66,14 @@ def _get_tg_app():
 # Vercel може передавати шлях і як /api/telegram, і як /
 
 @app.route("/api/telegram", methods=["GET"])
+@app.route("/api/ping", methods=["GET"])
 @app.route("/", methods=["GET"])
 def health():
+    # /api/ping використовується Vercel cron для warm-up контейнера
+    try:
+        _get_tg_app()  # ініціалізуємо Application під час ping, щоб cold start не вдарив по webhook
+    except Exception:
+        pass
     return "Simeystvo bot webhook is alive", 200
 
 

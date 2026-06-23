@@ -641,6 +641,14 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("Я вже передав цю оцінку адвокату.", show_alert=True)
         return
 
+    # Після cold start user_data порожній — оцінку вже не відновити
+    if "assessment_score" not in context.user_data:
+        await query.answer(
+            "Сесія застаріла. Будь ласка, пройдіть оцінку ще раз — це займе 1 хвилину.",
+            show_alert=True,
+        )
+        return
+
     await query.answer()
 
     user        = query.from_user

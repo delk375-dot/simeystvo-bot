@@ -7,11 +7,14 @@ stats.py — проста in-file статистика бота.
 
 import json
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-STATS_FILE = Path(__file__).parent / "content" / "stats.json"
+# На Vercel файлова система read-only, крім /tmp
+_DEFAULT_STATS = Path(__file__).parent / "content" / "stats.json"
+STATS_FILE = Path("/tmp/stats.json") if os.getenv("VERCEL") else _DEFAULT_STATS
 
 _DEFAULTS: dict = {
     "total_start_count": 0,
@@ -24,16 +27,17 @@ _DEFAULTS: dict = {
 
 
 def load_stats() -> dict:
-    try:
-        if STATS_FILE.exists():
-            with open(STATS_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-            # Merge with defaults so missing keys always exist
-            for k, v in _DEFAULTS.items():
-                data.setdefault(k, v)
-            return data
-    except Exception as e:
-        logger.error("Не вдалося завантажити stats.json: %s", e)
+    # Спочатку намагаємось прочитати робочий файл (STATS_FILE)
+    for path in [STATS_FILE, _DEFAULT_STATS]:
+        try:
+            if path.exists():
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                for k, v in _DEFAULTS.items():
+                    data.setdefault(k, v)
+                return data
+        except Exception as e:
+            logger.error("Не вдалося завантажити %s: %s", path, e)
     return dict(_DEFAULTS)
 
 
