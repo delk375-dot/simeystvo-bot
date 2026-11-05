@@ -13,6 +13,7 @@ import logging
 import os
 import random
 import re
+import time
 import urllib.request
 from pathlib import Path
 
@@ -38,8 +39,6 @@ from personality import (
     CONSULTATION_CONTACT_RECEIVED,
     BOOKS_TEXT,
     SERVICES_TEXT,
-    BOOK_INTEREST_CONTACT_REQUEST,
-    BOOK_INTEREST_CONTACT_RECEIVED,
     PHONE_TEXT,
     PHONE_CALL_TEXT,
 )
@@ -53,6 +52,9 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не знайдено у .env файлі")
 
+SITE_URL = "https://ai.semeystvo.com.ua"
+UTM = "utm_source=telegram&utm_medium=coolaw"
+SHOP_API = "https://practical-law.com/api/books"
 BASE_DIR = Path(__file__).parent
 CONTENT_DIR = BASE_DIR / "content"
 
@@ -62,6 +64,42 @@ logger = logging.getLogger(__name__)
 def load_json(filename: str) -> list:
     with open(CONTENT_DIR / filename, encoding="utf-8") as f:
         return json.load(f)
+
+
+def site_url(path: str) -> str:
+    """Посилання на сайт із міткою, щоб бачити в аналітиці заявки з Telegram."""
+    if path.startswith("http"):
+        return path
+    return f"{SITE_URL}{path}?{UTM}"
+
+
+# Ціни книг беремо з магазину, щоб не розходились із сайтом; у файлі лежить запасна.
+_shop_cache = {"at": 0.0, "prices": {}}
+
+
+def _shop_fetch() -> dict:
+    req = urllib.request.Request(SHOP_API, headers={"User-Agent": "coolaw/1.0"})
+    with urllib.request.urlopen(req, timeout=4) as r:
+        data = json.load(r)
+    items = data.get("books", data) if isinstance(data, dict) else data
+    if isinstance(items, dict):
+        items = list(items.values())
+    return {x["id"]: x["price"] for x in items if x.get("id") and x.get("price")}
+
+
+async def shop_prices() -> dict:
+    if time.time() - _shop_cache["at"] > 3600:
+        try:
+            _shop_cache["prices"] = await asyncio.to_thread(_shop_fetch)
+        except Exception as e:
+            logger.warning("Магазин не відповів, беру ціни з файлу: %s", e)
+        _shop_cache["at"] = time.time()
+    return _shop_cache["prices"]
+
+
+def book_price(book: dict, prices: dict) -> str:
+    live = prices.get(book.get("shop_id"))
+    return f"{live} грн" if live else book["price"]
 
 
 def webhook_secret() -> str:
@@ -123,46 +161,30 @@ async def notify_admin(bot, text: str) -> bool:
 
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
         [
-            InlineKeyboardButton("🏛 Послуги",              callback_data="services"),
-            InlineKeyboardButton("📚 Книги",                callback_data="books"),
+            InlineKeyboardButton("🏛 Послуги",               callback_data="services"),
+            InlineKeyboardButton("🎯 Перевірка готовності",  callback_data="assess"),
         ],
         [
-            InlineKeyboardButton("📝 Консультація",         callback_data="request"),
-            InlineKeyboardButton("🎯 Шанси на успіх",       callback_data="assess"),
+            InlineKeyboardButton("📚 Книги",   callback_data="books"),
+            InlineKeyboardButton("💡 Корисне", callback_data="useful"),
         ],
         [
-            InlineKeyboardButton("👨‍⚖️ Про адвоката",        callback_data="about"),
-            InlineKeyboardButton("🧠 Порада дня",           callback_data="tips"),
-        ],
-        [
-            InlineKeyboardButton("📚 Архів справ",           callback_data="archive"),
-            InlineKeyboardButton("📞 Телефон",              callback_data="phone"),
+            InlineKeyboardButton("👨‍⚖️ Про адвоката", callback_data="about"),
+            InlineKeyboardButton("📞 Зв'язок",        callback_data="phone"),
         ],
     ])
 
 
 def kb_services() -> InlineKeyboardMarkup:
-    services = load_json("services.json")
-    rows = [[InlineKeyboardButton("💰 Скільки це може коштувати?", callback_data="cost_info")]]
-    for i in range(0, len(services), 2):
-        pair = services[i:i + 2]
-        rows.append([
-            InlineKeyboardButton(
-                f"{s['emoji']} {s.get('button_title', s['title'])}",
-                callback_data=f"service:{s['id']}",
-            )
-            for s in pair
-        ])
+    rows = [
+        [InlineKeyboardButton(f"{g['emoji']} {g['title']}", callback_data=f"sg:{g['id']}")]
+        for g in load_json("services.json")
+    ]
+    rows.append([InlineKeyboardButton("📝 Не знайшли своє? Опишіть ситуацію", callback_data="request")])
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     return InlineKeyboardMarkup(rows)
-
-
-def kb_service_detail() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Консультація",  callback_data="request")],
-        [InlineKeyboardButton("⬅️ Назад до послуг", callback_data="services")],
-    ])
 
 
 def kb_home() -> InlineKeyboardMarkup:
@@ -186,11 +208,11 @@ def kb_admin() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("👤 Переглянути як клієнт", callback_data="admin_view_client"),
-            InlineKeyboardButton("🎯 Тест: Шанси на успіх",  callback_data="assess"),
+            InlineKeyboardButton("🎯 Тест: Перевірка готовності", callback_data="assess"),
         ],
         [
             InlineKeyboardButton("📚 Тест: Книги",           callback_data="books"),
-            InlineKeyboardButton("📝 Тест: Консультація",    callback_data="request"),
+            InlineKeyboardButton("📝 Тест: Описати ситуацію", callback_data="request"),
         ],
     ])
 
@@ -240,54 +262,37 @@ async def cb_services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await query.edit_message_text(SERVICES_TEXT, reply_markup=kb_services())
 
 
+async def cb_service_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    group_id = query.data.split(":", 1)[1]
+    group = next((g for g in load_json("services.json") if g["id"] == group_id), None)
+    if not group:
+        await cb_stale(update, context)
+        return
+    await query.answer()
+    rows = [[InlineKeyboardButton(i["title"], callback_data=f"service:{i['id']}")] for i in group["items"]]
+    rows.append([InlineKeyboardButton("⬅️ До послуг", callback_data="services")])
+    await query.edit_message_text(f"{group['emoji']} {group['title']}\n\nОберіть, що сталося:", reply_markup=InlineKeyboardMarkup(rows))
+
+
 async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     service_id = query.data.split(":", 1)[1]
-    services = load_json("services.json")
-    service = next((s for s in services if s["id"] == service_id), None)
-    if not service:
-        await query.answer("Не можу знайти цю послугу — спробуйте ще раз", show_alert=True)
+    found = next(((g, i) for g in load_json("services.json") for i in g["items"] if i["id"] == service_id), None)
+    if not found:
+        await cb_stale(update, context)
         return
-    context.user_data["selected_service"] = service["title"]
-    text = (
-        f"{service['emoji']} *{service['title']}*\n\n"
-        f"{service['description']}\n\n"
-        f"⏱ *Строки:* {service['typical_terms']}"
-    )
-    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb_service_detail())
-
-
-# ─── Вартість послуг ─────────────────────────────────────────────────────────
-
-COST_INFO_TEXT = (
-    "💰 *Скільки це може коштувати?*\n\n"
-    "Послухайте мене уважно.\n\n"
-    "Розлучення, спадщина, ДТП чи кримінальна справа — це різний обсяг роботи.\n\n"
-    "Тому я не люблю називати цифри навмання.\n\n"
-    "Це було б схоже на те, як лікар називає вартість лікування ще до огляду пацієнта.\n\n"
-    "Якщо хочете отримати орієнтир саме по своїй ситуації — просто опишіть проблему своїми словами.\n\n"
-    "Я передам фабулу справи адвокату.\n\n"
-    "Після ознайомлення із ситуацією Василь Васильович або хтось із команди повідомить:\n\n"
-    "• можливі варіанти вирішення;\n\n"
-    "• орієнтовну вартість допомоги;\n\n"
-    "• що можна зробити вже зараз.\n\n"
-    "🤖 Моє завдання — допомогти вам зорієнтуватися і доставити інформацію адвокату."
-)
-
-
-async def cb_cost_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        COST_INFO_TEXT,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
-            [InlineKeyboardButton("⚖️ Послуги",          callback_data="services")],
-            [InlineKeyboardButton("🏠 Головне меню",     callback_data="back_main")],
-        ]),
-    )
+    group, item = found
+    context.user_data["selected_service"] = f"Напрям: {item['title']}"
+    text = f"{group['emoji']} {item['title']}\n\n{item['text']}"
+    if item.get("price"):
+        text += f"\n\n💰 {item['price'][0].upper()}{item['price'][1:]}"
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
+        [InlineKeyboardButton("🌐 Детальніше на сайті", url=site_url(item["url"]))],
+        [InlineKeyboardButton("⬅️ Назад", callback_data=f"sg:{group['id']}")],
+    ]))
 
 
 # ─── Книги ───────────────────────────────────────────────────────────────────
@@ -296,13 +301,15 @@ async def cb_books(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     books = load_json("books.json")
+    prices = await shop_prices()
     rows = [
-        [InlineKeyboardButton(
-            f"📘 {b.get('short_title', b['title'])}\n{'🎁' if b.get('url') else '💰'} {b['price']}",
-            callback_data=f"book:{b['id']}",
-        )]
+        [InlineKeyboardButton(f"📘 {b['short_title']} · {book_price(b, prices)}", callback_data=f"book:{b['id']}")]
         for b in books
     ]
+    rows.append([
+        InlineKeyboardButton("📄 Гайди · 99 грн", url=site_url("/gaydy")),
+        InlineKeyboardButton("📄 Методички · 199 грн", url=site_url("/metodychky")),
+    ])
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     markup = InlineKeyboardMarkup(rows)
 
@@ -330,12 +337,10 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = (
         f"📖 *{book['title']}*\n\n"
         f"{book['description']}\n\n"
-        f"💰 *Ціна:* {book['price']}"
+        f"💰 *Ціна:* {book_price(book, await shop_prices())}"
     )
-    if book.get("url"):
-        action_button = InlineKeyboardButton("📥 Завантажити PDF", url=book["url"])
-    else:
-        action_button = InlineKeyboardButton("✅ Цікавить книга", callback_data=f"book_interest:{book_id}")
+    action_button = InlineKeyboardButton(
+        "📥 Отримати безкоштовно" if book.get("free") else "🛒 Купити", url=site_url(book["url"]))
     keyboard = InlineKeyboardMarkup([
         [action_button],
         [InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")],
@@ -367,29 +372,16 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
-async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# ─── Корисне ─────────────────────────────────────────────────────────────────
+
+async def cb_useful(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    book_id = int(query.data.split(":", 1)[1])
-    books = load_json("books.json")
-    book = next((b for b in books if b["id"] == book_id), None)
-    book_title = book["title"] if book else str(book_id)
-    delivered = await notify_admin(context.bot, f"📚 Інтерес до книги\n\nКнига: {book_title}\n{user_lines(query.from_user)}")
-    if not delivered:
-        await context.bot.send_message(query.message.chat_id, NOT_DELIVERED_TEXT, reply_markup=kb_home())
-        return
-    increment("book_interest")
-    context.user_data["selected_service"] = f"Книга: {book_title}"
-
-    if query.message.photo:
-        await query.message.delete()
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=BOOK_INTEREST_CONTACT_REQUEST,
-            reply_markup=kb_home(),
-        )
-    else:
-        await query.edit_message_text(BOOK_INTEREST_CONTACT_REQUEST, reply_markup=kb_home())
+    await query.edit_message_text("💡 Корисне\n\nКороткі поради й історії зі справ.", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧠 Порада дня",  callback_data="tips")],
+        [InlineKeyboardButton("📚 Архів справ", callback_data="archive")],
+        [InlineKeyboardButton("⬅️ Назад",       callback_data="back_main")],
+    ]))
 
 
 # ─── Порада дня ──────────────────────────────────────────────────────────────
@@ -397,7 +389,7 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 def _kb_tips() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Ще одна порада", callback_data="tips")],
-        [InlineKeyboardButton("📝 Консультація",   callback_data="request")],
+        [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
         [InlineKeyboardButton("🏠 Головне меню",   callback_data="back_main")],
     ])
 
@@ -413,7 +405,7 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text = (
             f"🧠 *Порада від CooLaw*\n\n"
             f"{tip['text']}\n\n"
-            f"🤖 Якщо ваша ситуація складніша за одну пораду — натисніть «Консультація»."
+            f"🤖 Якщо ваша ситуація складніша за одну пораду — натисніть «Описати ситуацію»."
         )
         try:
             await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_tips())
@@ -425,7 +417,7 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         logger.error("Помилка завантаження порад: %s", e)
         await query.edit_message_text(
-            "🧠 Поради тимчасово недоступні.\n\nСпробуйте пізніше або зверніться через «📝 Консультація».",
+            "🧠 Поради тимчасово недоступні.\n\nСпробуйте пізніше або натисніть «📝 Описати ситуацію».",
             reply_markup=kb_home(),
         )
 
@@ -508,13 +500,9 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     await query.edit_message_text(
-        "🎯 *Шанси на успіх*\n\n"
-        "Так, я знаю, звучить сміливо.\n\n"
-        "Василь Васильович, можливо, сказав би: «Мій електронний друже, не роздавай людям прогнози без аналізу документів».\n\n"
-        "І був би правий.\n\n"
-        "Тому домовимось так: я не прогнозую рішення суду і не даю юридичний висновок.\n\n"
-        "Я просто ставлю кілька питань і показую, наскільки ситуація виглядає підготовленою.\n\n"
-        "Якщо коротко — це моя попередня навігація.\n\n"
+        "🎯 *Перевірка готовності*\n\n"
+        "Я не прогнозую рішення суду і не даю юридичний висновок.\n\n"
+        "Я ставлю кілька питань і показую, наскільки ситуація підготовлена і на що звернути увагу.\n\n"
         "Оберіть напрям, з якого почнемо:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(rows),
@@ -562,7 +550,7 @@ def _build_accident_legal_blocks(flags: list) -> str:
             "Якщо тілесні ушкодження будуть підтверджені відповідною експертизою, "
             "можливе застосування ст. 286 КК України.\n\n"
             "У подібних ситуаціях уже може йтися не лише про штраф чи водійське посвідчення. "
-            "Залежно від обставин законом передбачені, зокрема, обмеження волі на строк до 3 років та інші наслідки.\n\n"
+            "За середньої тяжкості ушкоджень закон передбачає, зокрема, обмеження волі до 3 років, а за тяжких ушкоджень чи смерті потерпілого позбавлення волі від 3 до 8 років.\n\n"
             "Не драматизую, але тут я б не відкладав консультацію."
         )
     elif "injuries_no" in flags:
@@ -583,9 +571,9 @@ def _build_accident_legal_blocks(flags: list) -> str:
             "Тут є ще один момент.\n\n"
             "Залишення місця ДТП може утворювати окреме адміністративне правопорушення за ст. 122-4 КУпАП.\n\n"
             "Можливі наслідки:\n"
-            "• штраф;\n\n"
+            "• штраф 3 400 грн;\n\n"
             "або\n\n"
-            "• громадські роботи від 30 до 40 годин;\n\n"
+            "• позбавлення права керування на строк від 1 до 2 років;\n\n"
             "або\n\n"
             "• адміністративний арешт від 10 до 15 діб.\n\n"
             "Послухайте мене уважно: цей фактор я б точно не ігнорував."
@@ -596,7 +584,7 @@ def _build_accident_legal_blocks(flags: list) -> str:
             "залишення місця пригоди може створювати не лише адміністративні, а й кримінально-правові ризики.\n\n"
             "У подібних ситуаціях може ставитися питання про застосування ст. 135 КК України (залишення в небезпеці).\n\n"
             "За певних обставин законом передбачені, зокрема:\n"
-            "• обмеження волі від 2 до 3 років;\n\n"
+            "• обмеження волі до 2 років;\n\n"
             "або\n\n"
             "• позбавлення волі на той самий строк.\n\n"
             "Якщо залишення в небезпеці спричинило смерть людини або інші тяжкі наслідки, "
@@ -690,7 +678,7 @@ async def cb_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.answer()
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Безкоштовна експрес-оцінка", callback_data="request")],
+        [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
         [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
     ])
 
@@ -817,8 +805,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
         f"Заявок на консультацію: {data['consultation_requests']}\n"
         f"Оцінок завершено: {data['assessment_completed']}\n"
-        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n"
-        f"Інтересів до книг: {data['book_interest']}\n\n"
+        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
         f"🤖 CooLaw"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
@@ -849,8 +836,7 @@ async def cb_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
         f"Заявок на консультацію: {data['consultation_requests']}\n"
         f"Оцінок завершено: {data['assessment_completed']}\n"
-        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n"
-        f"Інтересів до книг: {data['book_interest']}\n\n"
+        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
         f"🤖 CooLaw"
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_back_admin())
@@ -925,11 +911,11 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_admin_view_client,  pattern="^admin_view_client$"))
     app.add_handler(CallbackQueryHandler(cb_back_main,          pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(cb_services,       pattern="^services$"))
+    app.add_handler(CallbackQueryHandler(cb_service_group,  pattern="^sg:"))
     app.add_handler(CallbackQueryHandler(cb_service_detail, pattern="^service:"))
-    app.add_handler(CallbackQueryHandler(cb_cost_info,      pattern="^cost_info$"))
+    app.add_handler(CallbackQueryHandler(cb_useful,         pattern="^useful$"))
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_request,         pattern="^request$"))
     app.add_handler(CallbackQueryHandler(cb_assess_start,    pattern="^assess$"))
     app.add_handler(CallbackQueryHandler(cb_assess_step,     pattern="^(at|an):"))

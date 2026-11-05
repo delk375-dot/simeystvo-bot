@@ -178,11 +178,47 @@ async def main():
     await app.process_update(пост)
     перевір(not надіслано, "пости каналу не стають заявками")
 
-    # Книга.
+    # Меню, послуги, книги.
+    bot_core._shop_fetch = lambda: {"police": 77}
+    групи = bot_core.load_json("services.json")
+    ідентифікатори = [i["id"] for g in групи for i in g["items"]]
+    перевір(len(ідентифікатори) == len(set(ідентифікатори)), "ідентифікатори послуг не повторюються")
+    відредаговано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "services"))
+    перевір(len([b for b in кнопки(відредаговано[-1][1]) if b and b.startswith("sg:")]) == len(групи), "усі групи послуг у меню")
+    for g in групи:
+        відредаговано.clear()
+        await app.process_update(кнопка_апдейт(app, CLIENT, f"sg:{g['id']}"))
+        перевір(len(кнопки(відредаговано[-1][1])) == len(g["items"]) + 1, f"група {g['title']}")
+        for i in g["items"]:
+            відредаговано.clear()
+            await app.process_update(кнопка_апдейт(app, CLIENT, f"service:{i['id']}"))
+            текст, kw = відредаговано[-1]
+            посилання = [b.url for ряд in kw["reply_markup"].inline_keyboard for b in ряд if b.url]
+            assert i["text"] in текст and посилання and посилання[0].startswith("https://ai.semeystvo.com.ua") and "utm_source=telegram" in посилання[0], i["id"]
+    перевір(True, f"усі {len(ідентифікатори)} послуг відкриваються з посиланням на сайт")
+    # Напрям послуги доходить разом зі зверненням.
     надіслано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "service:s130"))
+    await app.process_update(текст_апдейт(app, CLIENT, "Склали протокол"))
+    перевір(any("Напрям: Ст. 130" in t for t in адміну()), "напрям послуги дійшов разом зі зверненням")
+    відредаговано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "books"))
+    перевір(any("Як розмовляти з поліцією · 77 грн" in b.text for ряд in відредаговано[-1][1]["reply_markup"].inline_keyboard for b in ряд), "ціну книги взято з магазину")
+    bot_core._shop_cache["at"] = 0
+    def збій_магазину():
+        raise OSError("немає")
+    bot_core._shop_fetch = збій_магазину
+    bot_core._shop_cache["prices"] = {}
+    відредаговано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "books"))
+    перевір(any("Як розмовляти з поліцією · 99 грн" in b.text for ряд in відредаговано[-1][1]["reply_markup"].inline_keyboard for b in ряд), "без магазину ціна з файлу")
+    відредаговано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "book:1"))
+    перевір(any(b.url and "yak-rozmovlyaty-z-politsiyeyu" in b.url for ряд in відредаговано[-1][1]["reply_markup"].inline_keyboard for b in ряд), "кнопка купівлі веде на сайт")
     відредаговано.clear()
     await app.process_update(кнопка_апдейт(app, CLIENT, "book_interest:2"))
-    перевір(any("Інтерес до книги" in t for t in адміну()), "інтерес до книги дійшов адміну")
+    перевір(bot_core.WELCOME_TEXT == відредаговано[-1][0], "стара кнопка книги веде в меню")
     print(f"\n✅ {ок} перевірок пройдено")
 
 
