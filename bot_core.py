@@ -117,7 +117,7 @@ POMAGAYLO_URL = os.getenv("POMAGAYLO_MCP_URL", "")
 NOT_DELIVERED_TEXT = (
     "⚠️ Не вдалося передати повідомлення через технічний збій.\n\n"
     "Будь ласка, зателефонуйте: +380678390916\n\n"
-    "🤖 CooLaw"
+    "🤖 Виручайло"
 )
 PHONE_RE = re.compile(r"(?:\+?\d[\s()\-]*){9,}")
 
@@ -152,7 +152,7 @@ async def notify_admin(bot, text: str) -> bool:
             delivered = False
     if POMAGAYLO_URL:
         try:
-            await asyncio.to_thread(_pomagaylo_post, f"📥 CooLaw\n\n{text[:3500]}")
+            await asyncio.to_thread(_pomagaylo_post, f"📥 Виручайло\n\n{text[:3500]}")
         except Exception as e:
             logger.error("Копія в Помагайло не пішла: %s", e)
     return delivered
@@ -217,7 +217,7 @@ def kb_admin() -> InlineKeyboardMarkup:
 
 
 ADMIN_PANEL_TEXT = (
-    "👑 *Панель CooLaw*\n\n"
+    "👑 *Панель Виручайла*\n\n"
     "Ви в адмінському режимі.\n\n"
     "Тут можна перевірити статистику, опублікувати пост у канал або протестувати клієнтські сценарії.\n\n"
     "Оберіть дію:"
@@ -417,7 +417,7 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             raise ValueError("порожньо")
         tip = random.choice(tips)
         text = (
-            f"🧠 *Порада від CooLaw*\n\n"
+            f"🧠 *Порада від Виручайла*\n\n"
             f"{tip['text']}\n\n"
             f"🤖 Якщо ваша ситуація складніша за одну пораду — натисніть «Описати ситуацію»."
         )
@@ -559,7 +559,7 @@ def _build_accident_legal_blocks(flags: list) -> str:
 
     if "injuries_serious" in flags:
         blocks.append(
-            "\n\n⚠️ *На що звернув увагу CooLaw*\n\n"
+            "\n\n⚠️ *На що звернув увагу Виручайло*\n\n"
             "Тут ситуація може виходити за межі адміністративного провадження.\n\n"
             "Якщо тілесні ушкодження будуть підтверджені відповідною експертизою, "
             "можливе застосування ст. 286 КК України.\n\n"
@@ -569,7 +569,7 @@ def _build_accident_legal_blocks(flags: list) -> str:
         )
     elif "injuries_no" in flags:
         blocks.append(
-            "\n\n⚠️ *На що звернув увагу CooLaw*\n\n"
+            "\n\n⚠️ *На що звернув увагу Виручайло*\n\n"
             "Схоже, ситуація більше нагадує адміністративне ДТП.\n\n"
             "У таких випадках часто застосовується ст. 124 КУпАП.\n\n"
             "Можливі наслідки:\n"
@@ -581,7 +581,7 @@ def _build_accident_legal_blocks(flags: list) -> str:
 
     if "left_scene" in flags:
         blocks.append(
-            "\n\n⚠️ *На що звернув увагу CooLaw*\n\n"
+            "\n\n⚠️ *На що звернув увагу Виручайло*\n\n"
             "Тут є ще один момент.\n\n"
             "Залишення місця ДТП може утворювати окреме адміністративне правопорушення за ст. 122-4 КУпАП.\n\n"
             "Можливі наслідки:\n"
@@ -593,7 +593,7 @@ def _build_accident_legal_blocks(flags: list) -> str:
             "Послухайте мене уважно: цей фактор я б точно не ігнорував."
         )
         blocks.append(
-            "\n\n⚠️ *Ще один момент, на який звернув увагу CooLaw*\n\n"
+            "\n\n⚠️ *Ще один момент, на який звернув увагу Виручайло*\n\n"
             "Якщо після ДТП є потерпілі або людина перебувала у небезпечному для життя чи здоров'я стані, "
             "залишення місця пригоди може створювати не лише адміністративні, а й кримінально-правові ризики.\n\n"
             "У подібних ситуаціях може ставитися питання про застосування ст. 135 КК України (залишення в небезпеці).\n\n"
@@ -619,7 +619,7 @@ async def _show_assess_result(query, key: str, topic: dict, answers: str) -> Non
     legal_blocks = _build_accident_legal_blocks(calc["flags"]) if topic.get("title") == "ДТП" else ""
 
     text = (
-        f"🎯 *Попередня навігація CooLaw*\n\n"
+        f"🎯 *Попередня навігація Виручайла*\n\n"
         f"Напрям: {topic['title']}\n"
         f"Наскільки ситуація підготовлена: *{calc['score']}%*\n\n"
         f"Я подивився на ваші відповіді і бачу таку картину:\n\n"
@@ -628,7 +628,7 @@ async def _show_assess_result(query, key: str, topic: dict, answers: str) -> Non
         f"{legal_blocks}\n\n"
         f"_Послухайте мене уважно: це не юридичний висновок і не прогноз суду. "
         f"Це лише моя попередня навігація, щоб ви не йшли навмання._\n\n"
-        f"🤖 CooLaw"
+        f"🤖 Виручайло"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Передати адвокату та отримати консультацію", callback_data=f"atr:{key}:{answers}")],
@@ -654,7 +654,7 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     factors_str = "\n".join(f"• {f}" for f in calc["factors"]) if calc["factors"] else "не визначено"
     delivered = await notify_admin(context.bot, (
-        f"🎯 Нова заявка після оцінки CooLaw\n\n"
+        f"🎯 Нова заявка після оцінки Виручайла\n\n"
         f"Напрям: {topic['title']}\n"
         f"Орієнтовна оцінка: {calc['score']}%\n"
         f"Рівень: {level_ua}\n\n"
@@ -671,7 +671,7 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "✅ Передав вашу оцінку адвокату.\n\n"
         "Василь Васильович або хтось із команди ознайомиться з відповідями та зв'яжеться з вами.\n\n"
         "Якщо хочете, щоб зв'язались швидше — напишіть одним повідомленням номер телефону або інший контакт.\n\n"
-        "🤖 CooLaw",
+        "🤖 Виручайло",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 Додати деталі",  callback_data="request")],
             [InlineKeyboardButton("🔄 Пройти ще раз",  callback_data="assess")],
@@ -763,7 +763,7 @@ async def msg_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if has_phone:
         await message.reply_text(CONSULTATION_CONTACT_RECEIVED, reply_markup=kb_main())
     elif context.user_data.get("contact_asked"):
-        await message.reply_text("✅ Передав адвокату.\n\n🤖 CooLaw", reply_markup=kb_home())
+        await message.reply_text("✅ Передав адвокату.\n\n🤖 Виручайло", reply_markup=kb_home())
     else:
         context.user_data["contact_asked"] = True
         await message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
@@ -787,7 +787,7 @@ async def msg_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     increment("consultation_requests")
     await message.reply_text(
-        "✅ Передав адвокату.\n\nЯкщо ще не залишали контакт, напишіть, будь ласка, номер телефону.\n\n🤖 CooLaw",
+        "✅ Передав адвокату.\n\nЯкщо ще не залишали контакт, напишіть, будь ласка, номер телефону.\n\n🤖 Виручайло",
         reply_markup=kb_home(),
     )
 
@@ -833,13 +833,13 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from stats import load_stats
     data = load_stats()
     text = (
-        f"📊 *Статистика CooLaw*\n\n"
+        f"📊 *Статистика Виручайла*\n\n"
         f"Стартів /start: {data['total_start_count']}\n"
         f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
         f"Заявок на консультацію: {data['consultation_requests']}\n"
         f"Оцінок завершено: {data['assessment_completed']}\n"
         f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
-        f"🤖 CooLaw"
+        f"🤖 Виручайло"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -864,13 +864,13 @@ async def cb_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     from stats import load_stats
     data = load_stats()
     text = (
-        f"📊 *Статистика CooLaw*\n\n"
+        f"📊 *Статистика Виручайла*\n\n"
         f"Стартів /start: {data['total_start_count']}\n"
         f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
         f"Заявок на консультацію: {data['consultation_requests']}\n"
         f"Оцінок завершено: {data['assessment_completed']}\n"
         f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
-        f"🤖 CooLaw"
+        f"🤖 Виручайло"
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_back_admin())
 
