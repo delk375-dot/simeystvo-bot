@@ -231,7 +231,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user:
         # Перехід із посту каналу: /start s_<послуга> одразу показує потрібну послугу.
         arg = context.args[0] if context.args else ""
-        track_start(update.effective_user.id, arg[2:] if arg.startswith("s_") else "")
+        if update.effective_user.id != ADMIN_CHAT_ID:  # адміна в статистиці не рахуємо
+            track_start(update.effective_user.id, arg[2:] if arg.startswith("s_") else "")
         view = service_view(arg[2:]) if arg.startswith("s_") else None
         if view:
             context.user_data["selected_service"] = view[2]
