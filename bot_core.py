@@ -1,15 +1,19 @@
 """
 bot_core.py — ядро бота Сімейство AI.
 
-Містить усі handlers, callback-и та ConversationHandler.
+Містить усі handlers і callback-и. Стан між запитами в пам'яті не тримає.
 Експортує build_application() — використовується і polling (bot.py),
 і webhook (api/telegram.py).
 """
 
+import asyncio
+import hashlib
 import json
 import logging
 import os
 import random
+import re
+import urllib.request
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,7 +23,6 @@ from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
-    ConversationHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -61,10 +64,59 @@ def load_json(filename: str) -> list:
         return json.load(f)
 
 
-# ─── Стани розмови ───────────────────────────────────────────────────────────
-REQUEST_DESC = 0
-ASSESS_TOPIC = 10
-ASSESS_Q     = 11
+def webhook_secret() -> str:
+    """Секрет вебхука виводимо з токена: Telegram надсилає його в заголовку, чужі запити відсікаємо."""
+    return hashlib.sha256(TOKEN.encode()).hexdigest()[:48]
+
+
+# ─── Заявки адміну ───────────────────────────────────────────────────────────
+# Бот працює на Vercel, де пам'ять процесу зникає між запитами. Тому заявка йде адміну
+# одразу, стан тесту лежить у самій кнопці, а розмітку в цих повідомленнях не вмикаємо:
+# «_» в імені чи тексті клієнта ламала Markdown, і заявка губилась.
+TELEGRAM_LIMIT = 4000
+POMAGAYLO_URL = os.getenv("POMAGAYLO_MCP_URL", "")
+NOT_DELIVERED_TEXT = (
+    "⚠️ Не вдалося передати повідомлення через технічний збій.\n\n"
+    "Будь ласка, зателефонуйте: +380678390916\n\n"
+    "🤖 CooLaw"
+)
+PHONE_RE = re.compile(r"(?:\+?\d[\s()\-]*){9,}")
+
+
+def user_lines(user) -> str:
+    username = f"@{user.username}" if user.username else "без username"
+    return f"Клієнт: {user.full_name} ({username})\nTelegram ID: {user.id}"
+
+
+def _pomagaylo_post(text: str) -> None:
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                       "params": {"name": "notify_me", "arguments": {"text": text}}}).encode()
+    req = urllib.request.Request(POMAGAYLO_URL, data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "User-Agent": "coolaw/1.0"})
+    urllib.request.urlopen(req, timeout=15).read()
+
+
+async def notify_admin(bot, text: str) -> bool:
+    """True лише тоді, коли Telegram прийняв усі частини повідомлення."""
+    parts = [text[i:i + TELEGRAM_LIMIT] for i in range(0, len(text), TELEGRAM_LIMIT)] or [""]
+    delivered = True
+    for part in parts:
+        for attempt in range(2):
+            try:
+                await bot.send_message(ADMIN_CHAT_ID, part)
+                break
+            except Exception as e:
+                logger.error("Заявка не дійшла адміну (спроба %s): %s", attempt + 1, e)
+                if attempt == 0:
+                    await asyncio.sleep(1)
+        else:
+            delivered = False
+    if POMAGAYLO_URL:
+        try:
+            await asyncio.to_thread(_pomagaylo_post, f"📥 CooLaw\n\n{text[:3500]}")
+        except Exception as e:
+            logger.error("Копія в Помагайло не пішла: %s", e)
+    return delivered
 
 
 # ─── Клавіатури ──────────────────────────────────────────────────────────────
@@ -168,13 +220,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cb_back_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    context.user_data.pop("book_interest_pending",        None)
-    context.user_data.pop("book_interest_title",          None)
-    context.user_data.pop("book_interest_user",           None)
-    context.user_data.pop("consultation_contact_pending", None)
-    context.user_data.pop("consultation_original_text",   None)
-    context.user_data.pop("consultation_topic",           None)
-    context.user_data.pop("consultation_user",            None)
+    context.user_data.clear()
     if query.message.photo:
         await query.message.delete()
         await context.bot.send_message(
@@ -327,31 +373,13 @@ async def cb_book_interest(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     book_id = int(query.data.split(":", 1)[1])
     books = load_json("books.json")
     book = next((b for b in books if b["id"] == book_id), None)
-    user = query.from_user
-    username = f"@{user.username}" if user.username else "без username"
     book_title = book["title"] if book else str(book_id)
-
-    admin_text = (
-        f"📚 *Інтерес до книги*\n\n"
-        f"Книга: *{book_title}*\n"
-        f"Користувач: {user.full_name} ({username})\n"
-        f"Telegram ID: `{user.id}`\n\n"
-        f"Контакт: очікується окремим повідомленням"
-    )
-    try:
-        await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
-        logger.info("Книга [%s] — інтерес від user_id=%s", book_id, user.id)
-    except Exception as e:
-        logger.error("Помилка відправки адміну: %s", e)
-
+    delivered = await notify_admin(context.bot, f"📚 Інтерес до книги\n\nКнига: {book_title}\n{user_lines(query.from_user)}")
+    if not delivered:
+        await context.bot.send_message(query.message.chat_id, NOT_DELIVERED_TEXT, reply_markup=kb_home())
+        return
     increment("book_interest")
-    context.user_data["book_interest_pending"] = True
-    context.user_data["book_interest_title"]   = book_title
-    context.user_data["book_interest_user"]    = {
-        "full_name": user.full_name,
-        "username":  username,
-        "id":        user.id,
-    }
+    context.user_data["selected_service"] = f"Книга: {book_title}"
 
     if query.message.photo:
         await query.message.delete()
@@ -434,22 +462,48 @@ async def cb_archive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
 
 
-# ─── Оцінка ситуації (ConversationHandler) ───────────────────────────────────
+# ─── Оцінка ситуації ─────────────────────────────────────────────────────────
+# Відповіді лежать у кнопці: at:<напрям>, an:<напрям>:<ynu…>, atr:<напрям>:<ynu…>.
+ANSWER_KEYS = {"y": "yes", "n": "no", "u": "unknown"}
 
-async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+def _assess_parse(data: str):
+    """(ключ напряму, напрям, відповіді) або None для застарілої чи чужої кнопки."""
+    parts = data.split(":")
+    key = parts[1] if len(parts) > 1 else ""
+    answers = parts[2] if len(parts) > 2 else ""
+    topic = load_json("assessments.json").get(key)
+    if not topic or not re.fullmatch(r"[ynu]*", answers) or len(answers) > len(topic["questions"]):
+        return None
+    return key, topic, answers
+
+
+def _assess_calc(topic: dict, answers: str) -> dict:
+    score, factors, flags, items = 50, [], [], []
+    for question, code in zip(topic["questions"], answers):
+        answer = question["answers"][ANSWER_KEYS[code]]
+        score += answer["score"]
+        if "factor" in answer and len(factors) < 3:
+            factors.append(answer["factor"])
+        if "flag" in answer and answer["flag"] not in flags:
+            flags.append(answer["flag"])
+        items.append((question["text"], answer["label"]))
+    score = max(0, min(100, score))
+    level = "high" if score >= 70 else ("medium" if score >= 35 else "low")
+    return {"score": score, "level": level, "factors": factors, "flags": flags, "items": items}
+
+
+async def _assess_stale(query) -> None:
+    await query.answer("Цей тест застарів. Почнімо спочатку.", show_alert=True)
+    await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
+
+
+async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    for key in ("assessment_topic", "assessment_title", "assessment_score",
-                "assessment_level", "assessment_factors", "assessment_flags",
-                "assessment_answers", "assessment_sent", "assessment_followup",
-                "assessment_q_idx",
-                "consultation_contact_pending", "consultation_original_text",
-                "consultation_topic", "consultation_user"):
-        context.user_data.pop(key, None)
-
     assessments = load_json("assessments.json")
     rows = [
-        [InlineKeyboardButton(data["title"], callback_data=f"assess_topic:{key}")]
+        [InlineKeyboardButton(data["title"], callback_data=f"at:{key}")]
         for key, data in assessments.items()
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
@@ -465,32 +519,10 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(rows),
     )
-    return ASSESS_TOPIC
 
 
-async def cb_assess_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    topic_key = query.data.split(":", 1)[1]
-    assessments = load_json("assessments.json")
-    topic = assessments.get(topic_key)
-    if not topic:
-        await query.answer("Напрям не знайдено", show_alert=True)
-        return ASSESS_TOPIC
-
-    context.user_data["assessment_topic"]   = topic_key
-    context.user_data["assessment_title"]   = topic["title"]
-    context.user_data["assessment_score"]   = 50
-    context.user_data["assessment_factors"] = []
-    context.user_data["assessment_answers"] = []
-    context.user_data["assessment_q_idx"]   = 0
-
-    await _show_assess_question(query, context, topic)
-    return ASSESS_Q
-
-
-async def _show_assess_question(query, context, topic: dict) -> None:
-    q_idx    = context.user_data["assessment_q_idx"]
+async def _show_assess_question(query, key: str, topic: dict, answers: str) -> None:
+    q_idx    = len(answers)
     question = topic["questions"][q_idx]
     total    = len(topic["questions"])
     text = (
@@ -499,50 +531,28 @@ async def _show_assess_question(query, context, topic: dict) -> None:
         f"{question['text']}"
     )
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(question["answers"]["yes"]["label"],     callback_data="assess_ans:yes"),
-        InlineKeyboardButton(question["answers"]["no"]["label"],      callback_data="assess_ans:no"),
-        InlineKeyboardButton(question["answers"]["unknown"]["label"], callback_data="assess_ans:unknown"),
+        InlineKeyboardButton(question["answers"][full]["label"], callback_data=f"an:{key}:{answers}{code}")
+        for code, full in ANSWER_KEYS.items()
     ]])
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
-async def cb_assess_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query      = update.callback_query
+async def cb_assess_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Вибір напряму або відповідь на питання: усе потрібне приходить у самій кнопці."""
+    query = update.callback_query
+    parsed = _assess_parse(query.data)
+    if not parsed:
+        await _assess_stale(query)
+        return
+    key, topic, answers = parsed
     await query.answer()
-    answer_key = query.data.split(":", 1)[1]
-
-    assessments = load_json("assessments.json")
-    topic_key   = context.user_data["assessment_topic"]
-    topic       = assessments[topic_key]
-    q_idx       = context.user_data["assessment_q_idx"]
-    question    = topic["questions"][q_idx]
-    answer      = question["answers"][answer_key]
-
-    context.user_data["assessment_score"] += answer["score"]
-    if "factor" in answer and len(context.user_data["assessment_factors"]) < 3:
-        context.user_data["assessment_factors"].append(answer["factor"])
-    context.user_data["assessment_answers"].append({
-        "question": question["text"],
-        "answer_label": answer["label"],
-    })
-    if "flag" in answer:
-        flags = context.user_data.setdefault("assessment_flags", [])
-        if answer["flag"] not in flags:
-            flags.append(answer["flag"])
-
-    q_idx += 1
-    context.user_data["assessment_q_idx"] = q_idx
-
-    if q_idx < len(topic["questions"]):
-        await _show_assess_question(query, context, topic)
-        return ASSESS_Q
-
-    await _show_assess_result(query, context, topic)
-    return ConversationHandler.END
+    if len(answers) < len(topic["questions"]):
+        await _show_assess_question(query, key, topic, answers)
+    else:
+        await _show_assess_result(query, key, topic, answers)
 
 
-def _build_accident_legal_blocks(context) -> str:
-    flags = context.user_data.get("assessment_flags", [])
+def _build_accident_legal_blocks(flags: list) -> str:
     blocks = []
 
     if "injuries_serious" in flags:
@@ -597,36 +607,29 @@ def _build_accident_legal_blocks(context) -> str:
     return "".join(blocks)
 
 
-async def _show_assess_result(query, context, topic: dict) -> None:
-    raw_score = context.user_data["assessment_score"]
-    score     = max(0, min(100, raw_score))
-    level     = "high" if score >= 70 else ("medium" if score >= 35 else "low")
-
-    context.user_data["assessment_score"] = score
-    context.user_data["assessment_level"] = level
-
-    factors     = context.user_data.get("assessment_factors", [])
-    if factors:
-        factors_block = "*Ключові фактори:*\n" + "\n".join(f"• {f}" for f in factors)
+async def _show_assess_result(query, key: str, topic: dict, answers: str) -> None:
+    calc = _assess_calc(topic, answers)
+    if calc["factors"]:
+        factors_block = "*Ключові фактори:*\n" + "\n".join(f"• {f}" for f in calc["factors"])
     else:
         factors_block = "*Ключові фактори:*\nЯвних ризиків не зафіксовано."
 
-    legal_blocks = _build_accident_legal_blocks(context) if topic.get("title") == "ДТП" else ""
+    legal_blocks = _build_accident_legal_blocks(calc["flags"]) if topic.get("title") == "ДТП" else ""
 
     text = (
         f"🎯 *Попередня навігація CooLaw*\n\n"
         f"Напрям: {topic['title']}\n"
-        f"Орієнтовна готовність: *{score}%*\n\n"
+        f"Орієнтовна готовність: *{calc['score']}%*\n\n"
         f"Я подивився на ваші відповіді і бачу таку картину:\n\n"
         f"{factors_block}\n\n"
-        f"*Мій висновок:*\n{topic['results'][level]}"
+        f"*Мій висновок:*\n{topic['results'][calc['level']]}"
         f"{legal_blocks}\n\n"
         f"_Послухайте мене уважно: це не юридичний висновок і не прогноз суду. "
         f"Це лише моя попередня навігація, щоб ви не йшли навмання._\n\n"
         f"🤖 CooLaw"
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Передати адвокату та отримати консультацію", callback_data="assess_transfer")],
+        [InlineKeyboardButton("📝 Передати адвокату та отримати консультацію", callback_data=f"atr:{key}:{answers}")],
         [InlineKeyboardButton("🔄 Пройти ще раз",    callback_data="assess")],
         [InlineKeyboardButton("🏠 Головне меню",      callback_data="back_main")],
     ])
@@ -636,67 +639,32 @@ async def _show_assess_result(query, context, topic: dict) -> None:
 
 async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-
-    if context.user_data.get("assessment_sent"):
-        await query.answer("Я вже передав цю оцінку адвокату.", show_alert=True)
+    parsed = _assess_parse(query.data)
+    if not parsed or len(parsed[2]) != len(parsed[1]["questions"]):
+        await _assess_stale(query)
         return
-
-    # Після cold start user_data порожній — оцінку вже не відновити
-    if "assessment_score" not in context.user_data:
-        await query.answer(
-            "Сесія застаріла. Будь ласка, пройдіть оцінку ще раз — це займе 1 хвилину.",
-            show_alert=True,
-        )
-        return
-
+    key, topic, answers = parsed
     await query.answer()
-
-    user        = query.from_user
-    username    = f"@{user.username}" if user.username else "без username"
-    topic_title = context.user_data.get("assessment_title", "не вказано")
-    score       = context.user_data.get("assessment_score", "—")
-    level       = context.user_data.get("assessment_level", "—")
-    factors     = context.user_data.get("assessment_factors", [])
-    answers     = context.user_data.get("assessment_answers", [])
-
-    level_ua     = {"high": "висока", "medium": "середня", "low": "низька"}.get(level, level)
+    calc = _assess_calc(topic, answers)
+    level_ua = {"high": "висока", "medium": "середня", "low": "низька"}[calc["level"]]
     answers_text = "\n\n".join(
-        f"{i + 1}. {a['question']}\n   Відповідь: {a['answer_label']}"
-        for i, a in enumerate(answers)
+        f"{i + 1}. {question}\n   Відповідь: {label}" for i, (question, label) in enumerate(calc["items"])
     )
-    factors_str = "\n".join(f"• {f}" for f in factors) if factors else "не визначено"
-
-    admin_text = (
-        f"🎯 *Нова заявка після оцінки CooLaw*\n\n"
-        f"Напрям: {topic_title}\n"
-        f"Орієнтовна оцінка: {score}%\n"
+    factors_str = "\n".join(f"• {f}" for f in calc["factors"]) if calc["factors"] else "не визначено"
+    delivered = await notify_admin(context.bot, (
+        f"🎯 Нова заявка після оцінки CooLaw\n\n"
+        f"Напрям: {topic['title']}\n"
+        f"Орієнтовна оцінка: {calc['score']}%\n"
         f"Рівень: {level_ua}\n\n"
-        f"*Відповіді користувача:*\n\n"
-        f"{answers_text}\n\n"
-        f"*Ключові фактори:*\n{factors_str}\n\n"
-        f"Telegram name: {user.full_name}\n"
-        f"Username: {username}\n"
-        f"Telegram ID: `{user.id}`\n\n"
-        f"Контакт: очікується окремим повідомленням"
-    )
-    try:
-        await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
-        logger.info("Оцінка передана адміну — user_id=%s", user.id)
-        increment("assessment_sent_to_admin")
-    except Exception as e:
-        logger.error("Помилка відправки адміну: %s", e)
-
-    context.user_data["assessment_sent"]     = True
-    context.user_data["assessment_followup"] = True
-    context.user_data["consultation_contact_pending"] = True
-    context.user_data["consultation_original_text"]   = f"Оцінка CooLaw: {topic_title} — {score}% ({level_ua})"
-    context.user_data["consultation_topic"]           = f"Напрям: {topic_title}"
-    context.user_data["consultation_user"]            = {
-        "full_name": user.full_name,
-        "username":  username,
-        "id":        user.id,
-    }
-
+        f"Відповіді:\n\n{answers_text}\n\n"
+        f"Ключові фактори:\n{factors_str}\n\n"
+        f"{user_lines(query.from_user)}"
+    ))
+    if not delivered:
+        await query.edit_message_text(NOT_DELIVERED_TEXT, reply_markup=kb_home())
+        return
+    increment("assessment_sent_to_admin")
+    context.user_data["selected_service"] = f"Напрям: {topic['title']}"
     await query.edit_message_text(
         "✅ Передав вашу оцінку адвокату.\n\n"
         "Василь Васильович або хтось із команди ознайомиться з відповідями та зв'яжеться з вами.\n\n"
@@ -708,20 +676,6 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [InlineKeyboardButton("🏠 Головне меню",   callback_data="back_main")],
         ]),
     )
-
-
-async def conv_assess_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    for key in ("assessment_topic", "assessment_title", "assessment_score",
-                "assessment_level", "assessment_factors", "assessment_flags",
-                "assessment_answers", "assessment_sent", "assessment_followup", "assessment_q_idx"):
-        context.user_data.pop(key, None)
-    query = update.callback_query
-    if query:
-        await query.answer()
-        await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
-    elif update.message:
-        await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
-    return ConversationHandler.END
 
 
 # ─── Контакти ────────────────────────────────────────────────────────────────
@@ -774,144 +728,78 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(ABOUT_TEXT, reply_markup=kb_home())
 
 
-# ─── Консультація (ConversationHandler) ──────────────────────────────────────
+# ─── Консультація ────────────────────────────────────────────────────────────
 
-async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(REQUEST_TEXT)
-    return REQUEST_DESC
-
-
-async def req_get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    desc = update.message.text.strip()
-    user = update.message.from_user
-    username = f"@{user.username}" if user.username else "без username"
-    service_name = context.user_data.pop("selected_service", None)
-    napryam = f"Напрям: {service_name}" if service_name else "Напрям: не вказано"
-
-    followup       = context.user_data.pop("assessment_followup", False)
-    assess_title   = context.user_data.pop("assessment_title",    None)
-    context.user_data.pop("assessment_topic",   None)
-    context.user_data.pop("assessment_score",   None)
-    context.user_data.pop("assessment_level",   None)
-    context.user_data.pop("assessment_factors", None)
-    context.user_data.pop("assessment_answers", None)
-    context.user_data.pop("assessment_flags",   None)
-    context.user_data.pop("assessment_sent",    None)
-    context.user_data.pop("assessment_q_idx",   None)
-
-    if followup:
-        header  = f"📝 *Уточнення після оцінки CooLaw*"
-        napryam = f"Напрям: {assess_title or 'не вказано'}"
+    if query.message.photo:
+        await query.message.delete()
+        await context.bot.send_message(query.message.chat_id, REQUEST_TEXT, reply_markup=kb_home())
     else:
-        header  = f"📝 *Нова заявка на консультацію*"
+        await query.edit_message_text(REQUEST_TEXT, reply_markup=kb_home())
 
-    admin_text = (
-        f"{header}\n\n"
-        f"{napryam}\n\n"
-        f"Ситуація: {desc}\n\n"
-        f"Telegram name: {user.full_name}\n"
-        f"Username: {username}\n"
-        f"Telegram ID: `{user.id}`\n\n"
-        f"Контакт: очікується окремим повідомленням"
-    )
-    try:
-        await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
-        logger.info("Заявка на консультацію — від user_id=%s", user.id)
-    except Exception as e:
-        logger.error("Помилка відправки адміну: %s", e)
 
+async def msg_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Будь-який текст клієнта і є зверненням: опис ситуації, телефон чи уточнення."""
+    message = update.message
+    user = message.from_user
+    if user.id == ADMIN_CHAT_ID:
+        await message.reply_text(ADMIN_PANEL_TEXT, parse_mode="Markdown", reply_markup=kb_admin())
+        return
+    text = message.text.strip()
+    has_phone = bool(PHONE_RE.search(text))
+    topic = context.user_data.pop("selected_service", None)
+    header = "☎️ Контакт клієнта" if has_phone and len(text) < 60 else "📝 Звернення клієнта"
+    delivered = await notify_admin(context.bot, "\n\n".join(filter(None, [
+        header, topic, text, user_lines(user),
+    ])))
+    if not delivered:
+        await message.reply_text(NOT_DELIVERED_TEXT, reply_markup=kb_home())
+        return
     increment("consultation_requests")
-    context.user_data["consultation_contact_pending"] = True
-    context.user_data["consultation_original_text"]   = desc
-    context.user_data["consultation_topic"]           = napryam
-    context.user_data["consultation_user"]            = {
-        "full_name": user.full_name,
-        "username":  username,
-        "id":        user.id,
-    }
-
-    await update.message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
-    return ConversationHandler.END
+    if has_phone:
+        await message.reply_text(CONSULTATION_CONTACT_RECEIVED, reply_markup=kb_main())
+    elif context.user_data.get("contact_asked"):
+        await message.reply_text("✅ Передав адвокату.\n\n🤖 CooLaw", reply_markup=kb_home())
+    else:
+        context.user_data["contact_asked"] = True
+        await message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
 
 
-# ─── Fallback: довільний текст поза сценарієм ────────────────────────────────
-
-async def msg_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if context.user_data.get("book_interest_pending"):
-        contact_text = update.message.text.strip()
-        book_title   = context.user_data.get("book_interest_title", "невідомо")
-        saved_user   = context.user_data.get("book_interest_user", {})
-        full_name    = saved_user.get("full_name", update.message.from_user.full_name)
-        username     = saved_user.get("username", "без username")
-        user_id      = saved_user.get("id", update.message.from_user.id)
-
-        admin_text = (
-            f"📚 *Контакт по книзі*\n\n"
-            f"Книга: *{book_title}*\n"
-            f"Контакт користувача:\n{contact_text}\n\n"
-            f"Користувач: {full_name} ({username})\n"
-            f"Telegram ID: `{user_id}`"
-        )
-        try:
-            await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
-            logger.info("Контакт по книзі [%s] — від user_id=%s", book_title, user_id)
-        except Exception as e:
-            logger.error("Помилка відправки контакту адміну: %s", e)
-
-        context.user_data.pop("book_interest_pending", None)
-        context.user_data.pop("book_interest_title",   None)
-        context.user_data.pop("book_interest_user",    None)
-
-        await update.message.reply_text(BOOK_INTEREST_CONTACT_RECEIVED, reply_markup=kb_main())
+async def msg_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Голосові, фото, документи й контакт: пересилаємо адміну як є."""
+    message = update.message
+    user = message.from_user
+    if user.id == ADMIN_CHAT_ID:
         return
-
-    if context.user_data.get("consultation_contact_pending"):
-        contact_text  = update.message.text.strip()
-        original_desc = context.user_data.get("consultation_original_text", "—")
-        topic         = context.user_data.get("consultation_topic", "не вказано")
-        saved_user    = context.user_data.get("consultation_user", {})
-        full_name     = saved_user.get("full_name", update.message.from_user.full_name)
-        username      = saved_user.get("username", "без username")
-        user_id       = saved_user.get("id", update.message.from_user.id)
-
-        admin_text = (
-            f"☎️ *Контакт до консультації*\n\n"
-            f"Контакт користувача:\n{contact_text}\n\n"
-            f"Попередня заявка:\n{original_desc}\n\n"
-            f"Напрям:\n{topic}\n\n"
-            f"Користувач: {full_name} ({username})\n"
-            f"Telegram ID: `{user_id}`"
-        )
+    delivered = await notify_admin(context.bot, f"📎 Файл або голосове від клієнта\n\n{user_lines(user)}")
+    if delivered:
         try:
-            await context.bot.send_message(ADMIN_CHAT_ID, admin_text, parse_mode="Markdown")
-            logger.info("Контакт по консультації — від user_id=%s", user_id)
+            await message.forward(ADMIN_CHAT_ID)
         except Exception as e:
-            logger.error("Помилка відправки контакту адміну: %s", e)
-
-        context.user_data.pop("consultation_contact_pending", None)
-        context.user_data.pop("consultation_original_text",   None)
-        context.user_data.pop("consultation_topic",           None)
-        context.user_data.pop("consultation_user",            None)
-
-        await update.message.reply_text(CONSULTATION_CONTACT_RECEIVED, reply_markup=kb_main())
+            logger.error("Не вдалося переслати файл адміну: %s", e)
+            delivered = False
+    if not delivered:
+        await message.reply_text(NOT_DELIVERED_TEXT, reply_markup=kb_home())
         return
+    increment("consultation_requests")
+    await message.reply_text(
+        "✅ Передав адвокату.\n\nЯкщо ще не залишали контакт, напишіть, будь ласка, номер телефону.\n\n🤖 CooLaw",
+        reply_markup=kb_home(),
+    )
 
-    text = (
-        "Зрозумів.\n\n"
-        "Якщо хочете передати ситуацію адвокату — натисніть «📝 Консультація» "
-        "і коротко опишіть, що сталося.\n\n"
-        "Я занотую і передам Василю Васильовичу.\n\n"
-        "🤖 CooLaw"
-    )
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 Консультація", callback_data="request")],
-            [InlineKeyboardButton("🏠 Головне меню", callback_data="back_main")],
-        ]),
-    )
+
+async def cb_stale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Кнопки зі старих повідомлень, яких уже немає в боті."""
+    query = update.callback_query
+    await query.answer("Меню оновилось.")
+    await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
+
+
+async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.clear()
+    await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
 
 
 # ─── Статистика ──────────────────────────────────────────────────────────────
@@ -1017,19 +905,6 @@ async def cmd_publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(f"❌ Помилка: {e}")
 
 
-# ─── Скасування розмови ──────────────────────────────────────────────────────
-
-async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear()
-    query = update.callback_query
-    if query:
-        await query.answer()
-        await query.edit_message_text(WELCOME_TEXT, reply_markup=kb_main())
-    elif update.message:
-        await update.message.reply_text(WELCOME_TEXT, reply_markup=kb_main())
-    return ConversationHandler.END
-
-
 # ─── Збірка Application ──────────────────────────────────────────────────────
 
 def build_application() -> Application:
@@ -1039,43 +914,8 @@ def build_application() -> Application:
     """
     app = Application.builder().token(TOKEN).build()
 
-    request_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(cb_request, pattern="^request$")],
-        states={
-            REQUEST_DESC: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, req_get_desc),
-            ],
-        },
-        fallbacks=[
-            CommandHandler("start",  conv_cancel),
-            CommandHandler("cancel", conv_cancel),
-            CallbackQueryHandler(conv_cancel, pattern="^back_main$"),
-        ],
-        per_message=False,
-        allow_reentry=True,
-    )
-
-    assess_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(cb_assess_start, pattern="^assess$")],
-        states={
-            ASSESS_TOPIC: [
-                CallbackQueryHandler(cb_assess_topic, pattern="^assess_topic:"),
-            ],
-            ASSESS_Q: [
-                CallbackQueryHandler(cb_assess_answer, pattern="^assess_ans:"),
-            ],
-        },
-        fallbacks=[
-            CommandHandler("start",  conv_assess_cancel),
-            CommandHandler("cancel", conv_assess_cancel),
-            CallbackQueryHandler(conv_assess_cancel, pattern="^back_main$"),
-        ],
-        per_message=False,
-        allow_reentry=True,
-    )
-
-    app.add_handler(request_conv)
-    app.add_handler(assess_conv)
+    private = filters.ChatType.PRIVATE & filters.UpdateType.MESSAGE
+    app.add_handler(CommandHandler("cancel",  cmd_cancel))
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("publish", cmd_publish))
@@ -1090,12 +930,20 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_book_interest,  pattern="^book_interest:\\d+$"))
-    app.add_handler(CallbackQueryHandler(cb_assess_transfer, pattern="^assess_transfer$"))
+    app.add_handler(CallbackQueryHandler(cb_request,         pattern="^request$"))
+    app.add_handler(CallbackQueryHandler(cb_assess_start,    pattern="^assess$"))
+    app.add_handler(CallbackQueryHandler(cb_assess_step,     pattern="^(at|an):"))
+    app.add_handler(CallbackQueryHandler(cb_assess_transfer, pattern="^atr:"))
     app.add_handler(CallbackQueryHandler(cb_archive,         pattern="^archive$"))
     app.add_handler(CallbackQueryHandler(cb_tips,            pattern="^tips$"))
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_phone_call,     pattern="^phone_call$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg_fallback))
+    app.add_handler(CallbackQueryHandler(cb_stale))
+    app.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, msg_text))
+    app.add_handler(MessageHandler(
+        private & (filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE | filters.PHOTO | filters.Document.ALL | filters.CONTACT),
+        msg_media,
+    ))
 
     return app

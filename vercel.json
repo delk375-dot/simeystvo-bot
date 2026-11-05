@@ -10,11 +10,5 @@
       "src": "/(.*)",
       "dest": "api/telegram.py"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/ping",
-      "schedule": "*/5 * * * *"
-    }
   ]
 }

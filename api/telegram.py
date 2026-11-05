@@ -8,9 +8,8 @@ Vercel виявляє змінну `app` (Flask WSGI callable) як entrypoint.
 POST /api/telegram  — приймає Update від Telegram, передає боту.
 GET  /api/telegram  — health-check.
 
-Стан ConversationHandler зберігається в пам'яті процесу на час
-життя теплого контейнера Vercel. При холодному рестарті незавершені
-розмови скидаються — це нормальна поведінка serverless.
+Бот не покладається на пам'ять контейнера: заявка йде адміну одразу,
+а стан тесту лежить у кнопках. Запити без секрету Telegram відхиляються.
 """
 
 import asyncio
@@ -30,7 +29,7 @@ if _root_dir not in sys.path:
 
 from flask import Flask, request
 from telegram import Update
-from bot_core import build_application
+from bot_core import build_application, webhook_secret
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,6 +79,8 @@ def health():
 @app.route("/api/telegram", methods=["POST"])
 @app.route("/", methods=["POST"])
 def webhook():
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != webhook_secret():
+        return "Forbidden", 403
     try:
         data = request.get_json(force=True, silent=True)
         if not data:

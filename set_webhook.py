@@ -8,6 +8,7 @@ set_webhook.py — встановлює webhook для бота на Telegram.
     python set_webhook.py
 """
 
+import hashlib
 import os
 import sys
 import urllib.request
@@ -32,7 +33,8 @@ if not WEBHOOK_URL:
     sys.exit(1)
 
 url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
-data = json.dumps({"url": WEBHOOK_URL}).encode("utf-8")
+secret = hashlib.sha256(TOKEN.encode()).hexdigest()[:48]  # те саме, що bot_core.webhook_secret()
+data = json.dumps({"url": WEBHOOK_URL, "secret_token": secret, "allowed_updates": ["message", "callback_query"]}).encode("utf-8")
 
 req = urllib.request.Request(
     url,
