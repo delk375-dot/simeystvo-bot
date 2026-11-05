@@ -354,8 +354,12 @@ async def cb_book_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"{book['description']}\n\n"
         f"💰 *Ціна:* {book_price(book, await shop_prices())}"
     )
-    action_button = InlineKeyboardButton(
-        "📥 Отримати безкоштовно" if book.get("free") else "🛒 Купити", url=site_url(book["url"]))
+    if book.get("order"):
+        # Книги поза магазином: замовлення йде адвокату, про оплату домовляються напряму.
+        action_button = InlineKeyboardButton("🛒 Замовити", callback_data=f"border:{book_id}")
+    else:
+        action_button = InlineKeyboardButton(
+            "📥 Отримати безкоштовно" if book.get("free") else "🛒 Купити", url=site_url(book["url"]))
     keyboard = InlineKeyboardMarkup([
         [action_button],
         [InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")],
@@ -733,6 +737,30 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ─── Консультація ────────────────────────────────────────────────────────────
 
+async def cb_book_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    book_id = int(query.data.split(":", 1)[1])
+    book = next((b for b in load_json("books.json") if b["id"] == book_id), None)
+    if not book:
+        await query.answer("Не можу знайти цю книгу — спробуйте ще раз", show_alert=True)
+        return
+    await query.answer()
+    delivered = await notify_admin(
+        context.bot, f"📚 Замовлення книги\n\n{user_lines(update.effective_user)}\nКнига: {book['title']} ({book['price']})")
+    increment("consultation_requests")
+    text = (
+        f"✅ Передав адвокату замовлення книги «{book['title']}».\n\n"
+        "Вам напишуть тут, у Telegram, і підкажуть, як оплатити й отримати книгу. "
+        "Якщо зручніше телефоном, напишіть номер одним повідомленням.\n\n🧑‍💼 Виручайло"
+    ) if delivered else NOT_DELIVERED_TEXT
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад до книг", callback_data="books")]])
+    if query.message.photo:
+        await query.message.delete()
+        await context.bot.send_message(query.message.chat_id, text, reply_markup=markup)
+    else:
+        await query.edit_message_text(text, reply_markup=markup)
+
+
 async def cb_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -931,6 +959,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_useful,         pattern="^useful$"))
     app.add_handler(CallbackQueryHandler(cb_books,          pattern="^books$"))
     app.add_handler(CallbackQueryHandler(cb_book_detail,    pattern="^book:\\d+$"))
+    app.add_handler(CallbackQueryHandler(cb_book_order,     pattern="^border:\\d+$"))
     app.add_handler(CallbackQueryHandler(cb_request,         pattern="^request$"))
     app.add_handler(CallbackQueryHandler(cb_assess_start,    pattern="^assess$"))
     app.add_handler(CallbackQueryHandler(cb_assess_step,     pattern="^(at|an):"))

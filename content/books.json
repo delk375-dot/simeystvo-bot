@@ -1,6 +1,8 @@
 [
   {"id": 0, "title": "Що треба знати перед розлученням", "short_title": "Перед розлученням", "cover": "divorce_before.png", "price": "Безкоштовно", "free": true, "url": "https://t.me/aadvokatt/708",
    "description": "Що перевірити й підготувати, поки ви ще нічого не підписали."},
+  {"id": 11, "title": "Позбавлення батьківських прав: юридичні аспекти", "short_title": "Позбавлення батьківських прав", "cover": "pozbavl.jpg", "price": "500 грн", "order": true,
+   "description": "Підстави, докази, практика і типові помилки. Як суд оцінює інтереси дитини і як будувати позицію, а не лише емоційно доводити свою правоту."},
   {"id": 1, "title": "Як розмовляти з поліцією", "short_title": "Як розмовляти з поліцією", "cover": "", "shop_id": "police", "price": "99 грн", "url": "/knygy/yak-rozmovlyaty-z-politsiyeyu",
    "description": "Що казати і чого не казати під час зупинки, опитування чи виклику."},
   {"id": 2, "title": "Як розмовляти з ким завгодно", "short_title": "Як розмовляти з ким завгодно", "cover": "", "shop_id": "rozmovl", "price": "490 грн", "url": "/knygy/yak-rozmovlyaty",
@@ -9,6 +11,8 @@
    "description": "Що перевірити, перш ніж платити за квартиру чи будинок."},
   {"id": 4, "title": "36 юридичних стратагем", "short_title": "36 стратагем", "cover": "36 stratagem.png", "shop_id": "36-stratagem", "price": "490 грн", "url": "/knygy/36-stratagem",
    "description": "Тактика і стратегія в юридичній комунікації: 36 прийомів для суду й перемовин."},
+  {"id": 12, "title": "Юридичний спічрайтинг", "short_title": "Юридичний спічрайтинг", "cover": "spich.jpg", "price": "500 грн", "order": true,
+   "description": "Як підготувати себе, аудиторію і текст до виступу: у суді, на переговорах, перед клієнтами чи публічно."},
   {"id": 5, "title": "Як читати людей", "short_title": "Як читати людей", "cover": "", "price": "490 грн", "url": "/knygy/yak-chytaty-lyudey",
    "description": "Як помічати, що людина насправді має на увазі."},
   {"id": 6, "title": "Архітектура нетворкінгу", "short_title": "Архітектура нетворкінгу", "cover": "arh_netw.png", "shop_id": "arh-netv", "price": "490 грн", "url": "/arkhitektura-netvorkingu",

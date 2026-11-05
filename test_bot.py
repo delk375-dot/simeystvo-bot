@@ -227,6 +227,14 @@ async def main():
     await app.process_update(кнопка_апдейт(app, CLIENT, "book:1"))
     перевір(any(b.url and "yak-rozmovlyaty-z-politsiyeyu" in b.url for ряд in відредаговано[-1][1]["reply_markup"].inline_keyboard for b in ряд), "кнопка купівлі веде на сайт")
     відредаговано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "books"))
+    кнопки_книг = [b.text for ряд in відредаговано[-1][1]["reply_markup"].inline_keyboard for b in ряд]
+    перевір(any("Позбавлення батьківських прав" in t for t in кнопки_книг) and any("спічрайтинг" in t for t in кнопки_книг), "книги ПБП і спічрайтинг є в списку")
+    відредаговано.clear()
+    await app.process_update(кнопка_апдейт(app, CLIENT, "border:12"))
+    перевір(any("Замовлення книги" in t and "Юридичний спічрайтинг" in t for t in адміну()), "замовлення книги поза магазином дійшло адвокату")
+    перевір("Передав адвокату замовлення" in відредаговано[-1][0], "клієнт бачить, що замовлення передано")
+    відредаговано.clear()
     await app.process_update(кнопка_апдейт(app, CLIENT, "book_interest:2"))
     перевір(bot_core.WELCOME_TEXT == відредаговано[-1][0], "стара кнопка книги веде в меню")
     # Перехід із каналу й кнопка під постом.
