@@ -29,7 +29,7 @@ from telegram.ext import (
     filters,
 )
 
-from stats import track_start, increment
+from stats import format_stats, increment, track_start, track_user
 from topics import bot_link, topic_for
 
 from personality import (
@@ -229,9 +229,9 @@ ADMIN_PANEL_TEXT = (
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
     if update.effective_user:
-        track_start(update.effective_user.id)
         # Перехід із посту каналу: /start s_<послуга> одразу показує потрібну послугу.
         arg = context.args[0] if context.args else ""
+        track_start(update.effective_user.id, arg[2:] if arg.startswith("s_") else "")
         view = service_view(arg[2:]) if arg.startswith("s_") else None
         if view:
             context.user_data["selected_service"] = view[2]
@@ -749,6 +749,7 @@ async def msg_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if user.id == ADMIN_CHAT_ID:
         await message.reply_text(ADMIN_PANEL_TEXT, parse_mode="Markdown", reply_markup=kb_admin())
         return
+    track_user(user.id)
     text = message.text.strip()
     has_phone = bool(PHONE_RE.search(text))
     topic = context.user_data.pop("selected_service", None)
@@ -830,18 +831,8 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Ця команда доступна тільки адміну.")
         return
 
-    from stats import load_stats
-    data = load_stats()
-    text = (
-        f"📊 *Статистика Виручайла*\n\n"
-        f"Стартів /start: {data['total_start_count']}\n"
-        f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
-        f"Заявок на консультацію: {data['consultation_requests']}\n"
-        f"Оцінок завершено: {data['assessment_completed']}\n"
-        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
-        f"🧑‍💼 Виручайло"
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    text = await asyncio.to_thread(format_stats)
+    await update.message.reply_text(text)
 
 
 # ─── Адмін-панель callbacks ──────────────────────────────────────────────────
@@ -861,18 +852,8 @@ async def cb_back_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def cb_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    from stats import load_stats
-    data = load_stats()
-    text = (
-        f"📊 *Статистика Виручайла*\n\n"
-        f"Стартів /start: {data['total_start_count']}\n"
-        f"Унікальних користувачів: {len(data['unique_users'])}\n\n"
-        f"Заявок на консультацію: {data['consultation_requests']}\n"
-        f"Оцінок завершено: {data['assessment_completed']}\n"
-        f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
-        f"🧑‍💼 Виручайло"
-    )
-    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_back_admin())
+    text = await asyncio.to_thread(format_stats)
+    await query.edit_message_text(text, reply_markup=_kb_back_admin())
 
 
 async def cb_admin_publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
