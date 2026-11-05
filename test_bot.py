@@ -63,6 +63,7 @@ async def fake_markup(self, chat_id=None, message_id=None, reply_markup=None, **
 ExtBot.edit_message_reply_markup = fake_markup
 bot_core.increment = lambda *a, **k: None
 bot_core.track_start = lambda *a, **k: None
+bot_core.track_user = lambda *a, **k: None
 _sleep = asyncio.sleep
 bot_core.asyncio.sleep = lambda *_a, **_k: _sleep(0)
 
@@ -261,6 +262,21 @@ async def main():
     послуги = {i["id"] for g in групи for i in g["items"]}
     from topics import ПРАВИЛА
     перевір(all(п in послуги for _ш, п in ПРАВИЛА), "теми постів ведуть на наявні послуги")
+    # Лічильник: команди в Redis і текст для адміна.
+    import stats
+    надіслані_команди = []
+    def fake_redis(cmds):
+        надіслані_команди.append(cmds)
+        if cmds[0][0] == "SCARD":
+            return [12, 3, ["1", "2"], ["1", "2", "3"], "20", "5", "4", "2", ["s130", "3", "collectors", "1"]]
+        return [1] * len(cmds)
+    stats._redis = fake_redis
+    stats.track_start(42, "s130")
+    перевір(["HINCRBY", "coolaw:sources", "s130", "1"] in надіслані_команди[-1] and ["SADD", "coolaw:users", "42"] in надіслані_команди[-1], "перехід з посту рахується за темою")
+    текст = stats.format_stats()
+    перевір("Людей усього: 12" in текст and "За 7 днів: 2" in текст and "s130: 3" in текст, "статистика читає сховище")
+    stats._redis = lambda cmds: None
+    перевір("тимчасова" in stats.format_stats(), "без сховища чесно пише, що цифри тимчасові")
     print(f"\n✅ {ок} перевірок пройдено")
 
 
