@@ -15,13 +15,16 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 from topics import bot_link, topic_for
 
 RSS = "https://ai.semeystvo.com.ua/rss.xml"
 CHANNEL = "@aadvokatt"
 UTM = "utm_source=telegram&utm_medium=channel"
+КИЇВ = ZoneInfo("Europe/Kyiv")
 СТАН = os.path.join(os.path.dirname(os.path.abspath(__file__)), "content", "channel_posted.json")
 
 
@@ -71,7 +74,9 @@ def main() -> None:
         print(f"запам'ятав {len(статті)} статей")
         return
     опубліковані = set(json.load(open(СТАН, encoding="utf-8")))
-    нові = [с for с in статті if с["link"] not in опубліковані]
+    # Навмисне запізнення на добу: у канал іде лише стаття, що вийшла на сайті до сьогоднішнього дня (за Києвом).
+    сьогодні = datetime.now(КИЇВ).date()
+    нові = [с for с in статті if с["link"] not in опубліковані and с["date"].astimezone(КИЇВ).date() < сьогодні]
     if not нові:
         print("нових статей немає")
         return
