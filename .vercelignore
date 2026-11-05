@@ -8,3 +8,4 @@ radar.py
 __pycache__
 .claude
 test_bot.py
+publish_and_connect.py
