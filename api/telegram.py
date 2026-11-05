@@ -16,6 +16,7 @@ import asyncio
 import logging
 import os
 import sys
+import threading
 
 # api/ треба прибрати з sys.path ДО будь-яких імпортів:
 # файл api/telegram.py має те саме ім'я, що й пакет python-telegram-bot,
@@ -40,6 +41,9 @@ app = Flask(__name__)
 # ─── Singleton: один Application на весь час життя контейнера ────────────────
 _tg_app = None
 _loop = None
+# Запити можуть іти паралельно, а цикл подій один. Без замка другий запит бачив
+# ще не ініціалізований застосунок і назавжди отримував 500.
+_lock = threading.Lock()
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
@@ -52,12 +56,14 @@ def _get_loop() -> asyncio.AbstractEventLoop:
 
 
 def _get_tg_app():
+    """Викликати лише під _lock. Глобальна змінна заповнюється після успішної ініціалізації."""
     global _tg_app
     loop = _get_loop()
     if _tg_app is None:
         logger.info("Cold start: ініціалізація Application")
-        _tg_app = build_application()
-        loop.run_until_complete(_tg_app.initialize())
+        app_ = build_application()
+        loop.run_until_complete(app_.initialize())
+        _tg_app = app_
     return _tg_app
 
 
@@ -70,9 +76,10 @@ def _get_tg_app():
 def health():
     # /api/ping використовується Vercel cron для warm-up контейнера
     try:
-        _get_tg_app()  # ініціалізуємо Application під час ping, щоб cold start не вдарив по webhook
+        with _lock:
+            _get_tg_app()  # ініціалізуємо Application під час ping, щоб cold start не вдарив по webhook
     except Exception:
-        pass
+        logger.exception("Не вдалося ініціалізувати Application")
     return "Simeystvo bot webhook is alive", 200
 
 
@@ -86,11 +93,11 @@ def webhook():
         if not data:
             return "Bad Request: empty body", 400
 
-        tg_app = _get_tg_app()
-        loop = _get_loop()
-        update = Update.de_json(data, tg_app.bot)
-        loop.run_until_complete(tg_app.process_update(update))
+        with _lock:
+            tg_app = _get_tg_app()
+            update = Update.de_json(data, tg_app.bot)
+            _get_loop().run_until_complete(tg_app.process_update(update))
         return "OK", 200
-    except Exception as e:
-        logger.error("Помилка обробки update: %s", e)
+    except Exception:
+        logger.exception("Помилка обробки update")
         return "Internal Server Error", 500
