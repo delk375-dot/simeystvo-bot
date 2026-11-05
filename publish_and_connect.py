@@ -43,9 +43,18 @@ def main():
     if not TOKEN:
         стоп("У файлі .env немає токена бота.")
 
+    # Vercel CLI може бути видно не з кожного вікна Windows, тоді беремо його через npx.
+    cli = "vercel" if subprocess.run("where vercel", shell=True, capture_output=True).returncode == 0 else "npx --yes vercel"
+    if cli != "vercel" and subprocess.run("where npx", shell=True, capture_output=True).returncode != 0:
+        стоп("На цьому комп'ютері не видно ні Vercel, ні Node.js.")
+    if subprocess.run(f"{cli} whoami", shell=True, capture_output=True).returncode != 0:
+        print("Vercel просить увійти: підтвердьте вхід у браузері, який зараз відкриється.\n")
+        if subprocess.run(f"{cli} login", shell=True).returncode != 0:
+            стоп("Вхід у Vercel не вдався.")
+
     print("1/4 Публікую бота на Vercel, це 1–2 хвилини…\n")
-    if subprocess.run("vercel deploy --prod --yes", shell=True).returncode != 0:
-        стоп("Vercel не опублікував бота. Якщо вище просить увійти, виконайте vercel login і натисніть кнопку ще раз.")
+    if subprocess.run(f"{cli} deploy --prod --yes", shell=True).returncode != 0:
+        стоп("Vercel не опублікував бота.")
 
     print("\n2/4 Перевіряю нову версію…")
     for _ in range(12):
