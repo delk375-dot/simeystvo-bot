@@ -30,6 +30,7 @@ from telegram.ext import (
 )
 
 from stats import track_start, increment
+from topics import bot_link, topic_for
 
 from personality import (
     WELCOME_TEXT,
@@ -162,18 +163,16 @@ async def notify_admin(bot, text: str) -> bool:
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
+        [InlineKeyboardButton("🎯 Перевірка готовності справи", callback_data="assess")],
         [
-            InlineKeyboardButton("🏛 Послуги",               callback_data="services"),
-            InlineKeyboardButton("🎯 Перевірка готовності",  callback_data="assess"),
-        ],
-        [
+            InlineKeyboardButton("🏛 Послуги", callback_data="services"),
             InlineKeyboardButton("📚 Книги",   callback_data="books"),
-            InlineKeyboardButton("💡 Корисне", callback_data="useful"),
         ],
         [
+            InlineKeyboardButton("💡 Корисне",        callback_data="useful"),
             InlineKeyboardButton("👨‍⚖️ Про адвоката", callback_data="about"),
-            InlineKeyboardButton("📞 Зв'язок",        callback_data="phone"),
         ],
+        [InlineKeyboardButton("📞 Зв'язок", callback_data="phone")],
     ])
 
 
@@ -208,7 +207,7 @@ def kb_admin() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("👤 Переглянути як клієнт", callback_data="admin_view_client"),
-            InlineKeyboardButton("🎯 Тест: Перевірка готовності", callback_data="assess"),
+            InlineKeyboardButton("🎯 Тест: Готовність", callback_data="assess"),
         ],
         [
             InlineKeyboardButton("📚 Тест: Книги",           callback_data="books"),
@@ -231,6 +230,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.clear()
     if update.effective_user:
         track_start(update.effective_user.id)
+        # Перехід із посту каналу: /start s_<послуга> одразу показує потрібну послугу.
+        arg = context.args[0] if context.args else ""
+        view = service_view(arg[2:]) if arg.startswith("s_") else None
+        if view:
+            context.user_data["selected_service"] = view[2]
+            await update.message.reply_text(view[0], reply_markup=view[1])
+            return
         if update.effective_user.id == ADMIN_CHAT_ID:
             await update.message.reply_text(ADMIN_PANEL_TEXT, parse_mode="Markdown", reply_markup=kb_admin())
             return
@@ -275,24 +281,32 @@ async def cb_service_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await query.edit_message_text(f"{group['emoji']} {group['title']}\n\nОберіть, що сталося:", reply_markup=InlineKeyboardMarkup(rows))
 
 
-async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    service_id = query.data.split(":", 1)[1]
+def service_view(service_id: str):
+    """(текст, кнопки, напрям) або None, якщо такої послуги немає."""
     found = next(((g, i) for g in load_json("services.json") for i in g["items"] if i["id"] == service_id), None)
     if not found:
-        await cb_stale(update, context)
-        return
-    await query.answer()
+        return None
     group, item = found
-    context.user_data["selected_service"] = f"Напрям: {item['title']}"
     text = f"{group['emoji']} {item['title']}\n\n{item['text']}"
     if item.get("price"):
         text += f"\n\n💰 {item['price'][0].upper()}{item['price'][1:]}"
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([
+    markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
         [InlineKeyboardButton("🌐 Детальніше на сайті", url=site_url(item["url"]))],
         [InlineKeyboardButton("⬅️ Назад", callback_data=f"sg:{group['id']}")],
-    ]))
+    ])
+    return text, markup, f"Напрям: {item['title']}"
+
+
+async def cb_service_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    view = service_view(query.data.split(":", 1)[1])
+    if not view:
+        await cb_stale(update, context)
+        return
+    await query.answer()
+    context.user_data["selected_service"] = view[2]
+    await query.edit_message_text(view[0], reply_markup=view[1])
 
 
 # ─── Книги ───────────────────────────────────────────────────────────────────
@@ -778,6 +792,25 @@ async def msg_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+CHANNEL_USERNAME = "aadvokatt"
+
+
+async def on_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Під кожен новий пост каналу додаємо кнопку до бота, зокрема під пости, написані вручну."""
+    post = update.channel_post
+    if not post or (post.chat.username or "").lower() != CHANNEL_USERNAME or post.reply_markup:
+        return
+    text = post.text or post.caption or ""
+    if not text:
+        return  # фото без підпису, опитування й службові повідомлення не чіпаємо
+    try:
+        await post.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Написати адвокату", url=bot_link(topic_for(text)))],
+        ]))
+    except Exception as e:
+        logger.error("Не вдалося додати кнопку під пост %s: %s", post.message_id, e)
+
+
 async def cb_stale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Кнопки зі старих повідомлень, яких уже немає в боті."""
     query = update.callback_query
@@ -926,6 +959,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_phone_call,     pattern="^phone_call$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
     app.add_handler(CallbackQueryHandler(cb_stale))
+    app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, on_channel_post))
     app.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, msg_text))
     app.add_handler(MessageHandler(
         private & (filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE | filters.PHOTO | filters.Document.ALL | filters.CONTACT),

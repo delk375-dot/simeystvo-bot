@@ -52,6 +52,15 @@ ExtBot.edit_message_text = fake_edit
 ExtBot.answer_callback_query = fake_answer
 ExtBot.forward_message = fake_forward
 ExtBot.initialize = fake_init
+кнопки_постів = []
+
+
+async def fake_markup(self, chat_id=None, message_id=None, reply_markup=None, **kw):
+    кнопки_постів.append(reply_markup.inline_keyboard[0][0].url)
+    return None
+
+
+ExtBot.edit_message_reply_markup = fake_markup
 bot_core.increment = lambda *a, **k: None
 bot_core.track_start = lambda *a, **k: None
 _sleep = asyncio.sleep
@@ -219,6 +228,39 @@ async def main():
     відредаговано.clear()
     await app.process_update(кнопка_апдейт(app, CLIENT, "book_interest:2"))
     перевір(bot_core.WELCOME_TEXT == відредаговано[-1][0], "стара кнопка книги веде в меню")
+    # Перехід із каналу й кнопка під постом.
+    надіслано.clear()
+    await app.process_update(текст_апдейт(app, CLIENT, "/start s_s130"))
+    перевір(any("Ст. 130" in t for t in клієнту()), "перехід із посту відкриває послугу")
+    надіслано.clear()
+    await app.process_update(текст_апдейт(app, CLIENT, "Склали протокол"))
+    перевір(any("Напрям: Ст. 130" in t for t in адміну()), "тема з посту дійшла адміну")
+    надіслано.clear()
+    await app.process_update(текст_апдейт(app, CLIENT, "/start s_nema"))
+    перевір(any(t == bot_core.WELCOME_TEXT for t in клієнту()), "невідома тема веде в меню")
+
+    кнопки_постів.clear()
+    def пост(ім_я, **extra):
+        лічильник["n"] += 1
+        return Update.de_json({"update_id": лічильник["n"], "channel_post": {"message_id": 7, "date": 1,
+                               "chat": {"id": -100, "type": "channel", "username": ім_я}, **extra}}, app.bot)
+    await app.process_update(пост("aadvokatt", text="Шахраї взяли кредит на вас"))
+    перевір(кнопки_постів and кнопки_постів[-1].endswith("start=s_collectors"), "ручний пост отримав кнопку за темою")
+    кнопки_постів.clear()
+    await app.process_update(пост("inshyi", text="кредит"))
+    перевір(not кнопки_постів, "чужий канал не чіпаємо")
+    await app.process_update(пост("aadvokatt", photo=[{"file_id": "f", "file_unique_id": "u", "width": 1, "height": 1}]))
+    перевір(not кнопки_постів, "фото без підпису не чіпаємо")
+    await app.process_update(пост("aadvokatt", text="щось про кредит", reply_markup={"inline_keyboard": [[{"text": "x", "url": "https://t.me/x"}]]}))
+    перевір(not кнопки_постів, "пост із власною кнопкою не чіпаємо")
+
+    from topics import topic_for
+    for t, очікую in [("Спадкоємець за законом", "inheritance"), ("Аліменти — це не все", "alimony"), ("О котрій годині п'яних? ст. 130", "s130"),
+                      ("Якщо шахраї взяли кредит", "collectors"), ("Карас чи ґранфалун: що тримає ваш шлюб", "divorce"), ("Про погоду", "")]:
+        assert topic_for(t) == очікую, t
+    послуги = {i["id"] for g in групи for i in g["items"]}
+    from topics import ПРАВИЛА
+    перевір(all(п in послуги for _ш, п in ПРАВИЛА), "теми постів ведуть на наявні послуги")
     print(f"\n✅ {ок} перевірок пройдено")
 
 

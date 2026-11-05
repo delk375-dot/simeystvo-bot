@@ -80,7 +80,7 @@ def main():
 
     print("4/4 Підключаю бота до Telegram…")
     код, т = запит(f"https://api.telegram.org/bot{TOKEN}/setWebhook",
-                   {"url": f"{БАЗА}/api/telegram", "secret_token": СЕКРЕТ, "allowed_updates": ["message", "callback_query"]})
+                   {"url": f"{БАЗА}/api/telegram", "secret_token": СЕКРЕТ, "allowed_updates": ["message", "callback_query", "channel_post"]})
     if код != 200 or not json.loads(т).get("ok"):
         стоп(f"Telegram не прийняв підключення (код {код}).")
     код, т = запит(f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo")

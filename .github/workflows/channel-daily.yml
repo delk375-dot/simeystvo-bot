@@ -1,0 +1,41 @@
+name: Канал: стаття дня
+
+on:
+  schedule:
+    - cron: '40 6 * * *'   # близько 08:40–09:40 за Києвом; сайт оновлює блог о 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Лише показати наступний пост'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Опублікувати
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          DRY: ${{ inputs.dry }}
+        run: |
+          if [ "$DRY" = "true" ]; then
+            python -X utf8 channel_daily.py --dry
+            curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" | python -c "import json,sys; print('секрет для бота:', json.load(sys.stdin)['result']['username'])"
+            exit 0
+          fi
+          python -X utf8 channel_daily.py
+      - name: Запам'ятати опубліковане
+        if: ${{ inputs.dry != true }}
+        run: |
+          git config user.name "CooLaw"
+          git config user.email "coolaw@users.noreply.github.com"
+          git add content/channel_posted.json
+          git diff --cached --quiet || (git commit -m "chore: опубліковано статтю в каналі [skip ci]" && git push)

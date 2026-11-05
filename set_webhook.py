@@ -34,7 +34,7 @@ if not WEBHOOK_URL:
 
 url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
 secret = hashlib.sha256(TOKEN.encode()).hexdigest()[:48]  # те саме, що bot_core.webhook_secret()
-data = json.dumps({"url": WEBHOOK_URL, "secret_token": secret, "allowed_updates": ["message", "callback_query"]}).encode("utf-8")
+data = json.dumps({"url": WEBHOOK_URL, "secret_token": secret, "allowed_updates": ["message", "callback_query", "channel_post"]}).encode("utf-8")
 
 req = urllib.request.Request(
     url,
