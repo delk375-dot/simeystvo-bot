@@ -163,7 +163,7 @@ async def notify_admin(bot, text: str) -> bool:
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
-        [InlineKeyboardButton("🎯 Перевірка готовності справи", callback_data="assess")],
+        [InlineKeyboardButton("🧭 Оцінити свою ситуацію", callback_data="assess")],
         [
             InlineKeyboardButton("🏛 Послуги", callback_data="services"),
             InlineKeyboardButton("📚 Книги",   callback_data="books"),
@@ -207,7 +207,7 @@ def kb_admin() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("👤 Переглянути як клієнт", callback_data="admin_view_client"),
-            InlineKeyboardButton("🎯 Тест: Готовність", callback_data="assess"),
+            InlineKeyboardButton("🧭 Тест: Оцінка ситуації", callback_data="assess"),
         ],
         [
             InlineKeyboardButton("📚 Тест: Книги",           callback_data="books"),
@@ -514,7 +514,7 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     await query.edit_message_text(
-        "🎯 *Перевірка готовності*\n\n"
+        "🧭 *Оцінка вашої ситуації*\n\n"
         "Я не прогнозую рішення суду і не даю юридичний висновок.\n\n"
         "Я ставлю кілька питань і показую, наскільки ситуація підготовлена і на що звернути увагу.\n\n"
         "Оберіть напрям, з якого почнемо:",
@@ -621,7 +621,7 @@ async def _show_assess_result(query, key: str, topic: dict, answers: str) -> Non
     text = (
         f"🎯 *Попередня навігація CooLaw*\n\n"
         f"Напрям: {topic['title']}\n"
-        f"Орієнтовна готовність: *{calc['score']}%*\n\n"
+        f"Наскільки ситуація підготовлена: *{calc['score']}%*\n\n"
         f"Я подивився на ваші відповіді і бачу таку картину:\n\n"
         f"{factors_block}\n\n"
         f"*Мій висновок:*\n{topic['results'][calc['level']]}"
