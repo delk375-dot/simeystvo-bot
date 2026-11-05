@@ -117,7 +117,7 @@ POMAGAYLO_URL = os.getenv("POMAGAYLO_MCP_URL", "")
 NOT_DELIVERED_TEXT = (
     "⚠️ Не вдалося передати повідомлення через технічний збій.\n\n"
     "Будь ласка, зателефонуйте: +380678390916\n\n"
-    "🤖 Виручайло"
+    "🧑‍💼 Виручайло"
 )
 PHONE_RE = re.compile(r"(?:\+?\d[\s()\-]*){9,}")
 
@@ -419,7 +419,7 @@ async def cb_tips(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text = (
             f"🧠 *Порада від Виручайла*\n\n"
             f"{tip['text']}\n\n"
-            f"🤖 Якщо ваша ситуація складніша за одну пораду — натисніть «Описати ситуацію»."
+            f"🧑‍💼 Якщо ваша ситуація складніша за одну пораду — натисніть «Описати ситуацію»."
         )
         try:
             await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_tips())
@@ -628,7 +628,7 @@ async def _show_assess_result(query, key: str, topic: dict, answers: str) -> Non
         f"{legal_blocks}\n\n"
         f"_Послухайте мене уважно: це не юридичний висновок і не прогноз суду. "
         f"Це лише моя попередня навігація, щоб ви не йшли навмання._\n\n"
-        f"🤖 Виручайло"
+        f"🧑‍💼 Виручайло"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Передати адвокату та отримати консультацію", callback_data=f"atr:{key}:{answers}")],
@@ -671,7 +671,7 @@ async def cb_assess_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "✅ Передав вашу оцінку адвокату.\n\n"
         "Василь Васильович або хтось із команди ознайомиться з відповідями та зв'яжеться з вами.\n\n"
         "Якщо хочете, щоб зв'язались швидше — напишіть одним повідомленням номер телефону або інший контакт.\n\n"
-        "🤖 Виручайло",
+        "🧑‍💼 Виручайло",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 Додати деталі",  callback_data="request")],
             [InlineKeyboardButton("🔄 Пройти ще раз",  callback_data="assess")],
@@ -763,7 +763,7 @@ async def msg_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if has_phone:
         await message.reply_text(CONSULTATION_CONTACT_RECEIVED, reply_markup=kb_main())
     elif context.user_data.get("contact_asked"):
-        await message.reply_text("✅ Передав адвокату.\n\n🤖 Виручайло", reply_markup=kb_home())
+        await message.reply_text("✅ Передав адвокату.\n\n🧑‍💼 Виручайло", reply_markup=kb_home())
     else:
         context.user_data["contact_asked"] = True
         await message.reply_text(SUCCESS_REQUEST_TEXT, reply_markup=kb_home())
@@ -787,7 +787,7 @@ async def msg_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     increment("consultation_requests")
     await message.reply_text(
-        "✅ Передав адвокату.\n\nЯкщо ще не залишали контакт, напишіть, будь ласка, номер телефону.\n\n🤖 Виручайло",
+        "✅ Передав адвокату.\n\nЯкщо ще не залишали контакт, напишіть, будь ласка, номер телефону.\n\n🧑‍💼 Виручайло",
         reply_markup=kb_home(),
     )
 
@@ -839,7 +839,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Заявок на консультацію: {data['consultation_requests']}\n"
         f"Оцінок завершено: {data['assessment_completed']}\n"
         f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
-        f"🤖 Виручайло"
+        f"🧑‍💼 Виручайло"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -870,7 +870,7 @@ async def cb_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"Заявок на консультацію: {data['consultation_requests']}\n"
         f"Оцінок завершено: {data['assessment_completed']}\n"
         f"Оцінок передано адвокату: {data['assessment_sent_to_admin']}\n\n"
-        f"🤖 Виручайло"
+        f"🧑‍💼 Виручайло"
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=_kb_back_admin())
 
