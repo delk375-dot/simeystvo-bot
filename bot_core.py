@@ -163,7 +163,7 @@ async def notify_admin(bot, text: str) -> bool:
 def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Описати ситуацію", callback_data="request")],
-        [InlineKeyboardButton("🧭 Оцінити свою ситуацію", callback_data="assess")],
+        [InlineKeyboardButton("🎯 Шанси на успіх", callback_data="assess")],
         [
             InlineKeyboardButton("🏛 Послуги", callback_data="services"),
             InlineKeyboardButton("📚 Книги",   callback_data="books"),
@@ -207,7 +207,7 @@ def kb_admin() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("👤 Переглянути як клієнт", callback_data="admin_view_client"),
-            InlineKeyboardButton("🧭 Тест: Оцінка ситуації", callback_data="assess"),
+            InlineKeyboardButton("🎯 Тест: Шанси на успіх", callback_data="assess"),
         ],
         [
             InlineKeyboardButton("📚 Тест: Книги",           callback_data="books"),
@@ -514,8 +514,8 @@ async def cb_assess_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ]
     rows.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_main")])
     await query.edit_message_text(
-        "🧭 *Оцінка вашої ситуації*\n\n"
-        "Я не прогнозую рішення суду і не даю юридичний висновок.\n\n"
+        "🎯 *Шанси на успіх*\n\n"
+        "Так, я знаю, звучить сміливо. Тому домовимось одразу: я не прогнозую рішення суду і не даю юридичний висновок.\n\n"
         "Я ставлю кілька питань і показую, наскільки ситуація підготовлена і на що звернути увагу.\n\n"
         "Оберіть напрям, з якого почнемо:",
         parse_mode="Markdown",
