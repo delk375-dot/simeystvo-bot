@@ -868,6 +868,23 @@ async def cb_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
 
 
+async def cmd_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/block <Telegram ID> і /unblock <Telegram ID>: для старих звернень, під якими немає кнопки."""
+    if not update.effective_user or update.effective_user.id != ADMIN_CHAT_ID:
+        return
+    blocked = update.message.text.lstrip("/").lower().startswith("block")
+    ids = [int(a) for a in context.args if a.isdigit()]
+    if not ids:
+        await update.message.reply_text("Напишіть так: /block 5133406500 (або /unblock 5133406500).")
+        return
+    for uid in ids:
+        set_blocked(uid, blocked)
+    ok = all(is_blocked(uid) == blocked for uid in ids)
+    word = "Заблоковано" if blocked else "Розблоковано"
+    await update.message.reply_text(f"{word}: {', '.join(map(str, ids))}" if ok
+                                    else "⚠️ Не вдалося зберегти: сховище недоступне.")
+
+
 async def cb_stale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Кнопки зі старих повідомлень, яких уже немає в боті."""
     query = update.callback_query
@@ -975,6 +992,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("publish", cmd_publish))
+    app.add_handler(CommandHandler(["block", "unblock"], cmd_block))
     app.add_handler(CallbackQueryHandler(cb_back_admin,         pattern="^back_admin$"))
     app.add_handler(CallbackQueryHandler(cb_admin_stats,        pattern="^admin_stats$"))
     app.add_handler(CallbackQueryHandler(cb_admin_publish,      pattern="^admin_publish$"))
