@@ -29,7 +29,7 @@ from telegram.ext import (
     filters,
 )
 
-from stats import format_stats, increment, track_start, track_user
+from stats import format_stats, increment, is_blocked, set_blocked, track_start, track_user
 from topics import bot_link, topic_for
 
 from personality import (
@@ -135,14 +135,22 @@ def _pomagaylo_post(text: str) -> None:
     urllib.request.urlopen(req, timeout=15).read()
 
 
-async def notify_admin(bot, text: str) -> bool:
-    """True лише тоді, коли Telegram прийняв усі частини повідомлення."""
+def kb_block(user_id: int, blocked: bool = False) -> InlineKeyboardMarkup:
+    if blocked:
+        return InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Розблокувати", callback_data=f"unblk:{user_id}")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🚫 Заблокувати", callback_data=f"blk:{user_id}")]])
+
+
+async def notify_admin(bot, text: str, user_id: int | None = None) -> bool:
+    """True лише тоді, коли Telegram прийняв усі частини повідомлення.
+    З user_id під останньою частиною з'являється кнопка «Заблокувати»."""
     parts = [text[i:i + TELEGRAM_LIMIT] for i in range(0, len(text), TELEGRAM_LIMIT)] or [""]
     delivered = True
-    for part in parts:
+    for n, part in enumerate(parts):
+        markup = kb_block(user_id) if user_id and n == len(parts) - 1 else None
         for attempt in range(2):
             try:
-                await bot.send_message(ADMIN_CHAT_ID, part)
+                await bot.send_message(ADMIN_CHAT_ID, part, reply_markup=markup)
                 break
             except Exception as e:
                 logger.error("Заявка не дійшла адміну (спроба %s): %s", attempt + 1, e)
@@ -778,6 +786,8 @@ async def msg_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if user.id == ADMIN_CHAT_ID:
         await message.reply_text(ADMIN_PANEL_TEXT, parse_mode="Markdown", reply_markup=kb_admin())
         return
+    if is_blocked(user.id):
+        return
     track_user(user.id)
     text = message.text.strip()
     has_phone = bool(PHONE_RE.search(text))
@@ -785,7 +795,7 @@ async def msg_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     header = "☎️ Контакт клієнта" if has_phone and len(text) < 60 else "📝 Звернення клієнта"
     delivered = await notify_admin(context.bot, "\n\n".join(filter(None, [
         header, topic, text, user_lines(user),
-    ])))
+    ])), user_id=user.id)
     if not delivered:
         await message.reply_text(NOT_DELIVERED_TEXT, reply_markup=kb_home())
         return
@@ -803,9 +813,9 @@ async def msg_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Голосові, фото, документи й контакт: пересилаємо адміну як є."""
     message = update.message
     user = message.from_user
-    if user.id == ADMIN_CHAT_ID:
+    if user.id == ADMIN_CHAT_ID or is_blocked(user.id):
         return
-    delivered = await notify_admin(context.bot, f"📎 Файл або голосове від клієнта\n\n{user_lines(user)}")
+    delivered = await notify_admin(context.bot, f"📎 Файл або голосове від клієнта\n\n{user_lines(user)}", user_id=user.id)
     if delivered:
         try:
             await message.forward(ADMIN_CHAT_ID)
@@ -839,6 +849,23 @@ async def on_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         ]))
     except Exception as e:
         logger.error("Не вдалося додати кнопку під пост %s: %s", post.message_id, e)
+
+
+async def cb_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Кнопка під зверненням: заблокувати або розблокувати автора. Лише для адміна."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_CHAT_ID:
+        await query.answer()
+        return
+    action, uid = query.data.split(":", 1)
+    blocked = action == "blk"
+    set_blocked(int(uid), blocked)
+    await query.answer("Заблоковано: звернення від цієї людини більше не надходитимуть." if blocked
+                       else "Розблоковано.", show_alert=True)
+    try:
+        await query.edit_message_reply_markup(reply_markup=kb_block(int(uid), blocked))
+    except BadRequest:
+        pass
 
 
 async def cb_stale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -969,6 +996,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_phone,          pattern="^phone$"))
     app.add_handler(CallbackQueryHandler(cb_phone_call,     pattern="^phone_call$"))
     app.add_handler(CallbackQueryHandler(cb_about,          pattern="^about$"))
+    app.add_handler(CallbackQueryHandler(cb_block,           pattern=r"^(blk|unblk):\d+$"))
     app.add_handler(CallbackQueryHandler(cb_stale))
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, on_channel_post))
     app.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, msg_text))

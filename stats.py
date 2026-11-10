@@ -144,3 +144,22 @@ def format_stats() -> str:
         lines += [f"• {k}: {v}" for k, v in sorted(sources.items(), key=lambda kv: -int(kv[1]))]
     lines += ["", "Лічильник веде облік від дня підключення сховища."]
     return "\n".join(lines)
+
+
+# ─── Блокування спамерів ─────────────────────────────────────────────────────
+# Василь натискає «🚫 Заблокувати» під зверненням, і людина потрапляє в множину coolaw:blocked.
+# Від заблокованих бот звернень адміну не пересилає. Без Redis список живе лише до перезапуску.
+_blocked_local: set = set()
+
+
+def is_blocked(user_id: int) -> bool:
+    res = _redis([["SISMEMBER", f"{P}blocked", str(user_id)]])
+    if res is not None:
+        return bool(res[0])
+    return user_id in _blocked_local
+
+
+def set_blocked(user_id: int, blocked: bool) -> None:
+    cmd = "SADD" if blocked else "SREM"
+    if _redis([[cmd, f"{P}blocked", str(user_id)]]) is None:
+        (_blocked_local.add if blocked else _blocked_local.discard)(user_id)
